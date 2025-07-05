@@ -1,6 +1,6 @@
 # OKRA
 
-OKRA is an open-source backend platform that makes it simple to build and scale services, agentic workflows, and distributed systems- without boilerplate or complexity.
+OKRA is an open-source backend platform that makes it simple to build and scale services, agentic workflows, and distributed systems - without boilerplate or complexity.
 
 Define your APIs with Protobuf, write plain code, and OKRA handles the rest: auto-exposing your logic as web endpoints, gRPC services, or message-driven workflows.
 
