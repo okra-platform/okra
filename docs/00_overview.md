@@ -68,6 +68,7 @@ Each deployed module contains:
 04_service-to-service.md - Details of how service-to-service communication is built on top of GoAKT
 05_wasm-actors.md – WASMActor and WASMSingletonActor details & worker pool
 07_host-apis.md - How Host APIs are injected into the services
+
 100_coding-conventions.md - Coding conventions and best-practices for this repo 
 101_testing-strategy.md - Unit, integration, and fixture testing approach
 
