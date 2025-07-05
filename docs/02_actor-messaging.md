@@ -1,4 +1,4 @@
-# 02 – Actor Messaging and Service Routing
+# Actor Messaging and Service Routing
 
 ## Service Invocation via Actor Messaging
 

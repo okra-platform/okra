@@ -1,4 +1,4 @@
-# 03 – Exposing Services via ConnectRPC
+# Exposing Services via ConnectRPC
 
 OKRA services are internally actor-based, but they can be exposed to the outside world via **ConnectRPC** or standard **gRPC**.
 

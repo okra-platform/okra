@@ -1,4 +1,4 @@
-# 07 – Host API Injection
+# Host API Injection
 
 Host APIs allow the OKRA runtime to expose system capabilities (e.g., state, logging, service calls) into WASM services in a controlled and sandboxed way.
 

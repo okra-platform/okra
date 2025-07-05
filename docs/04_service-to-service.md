@@ -1,10 +1,10 @@
-# 04 – Service-to-Service Communication
+# Service-to-Service Communication
 
 Service-to-service communication in OKRA is built on top of GoAKT, but this is **fully transparent to the service code**.
 
 ---
 
-## igh-Level Behavior
+## High-Level Behavior
 
 - Services declare their dependencies in the **service config file**
 - At runtime, the corresponding service stubs are **injected into the constructor**
