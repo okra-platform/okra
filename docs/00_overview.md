@@ -70,5 +70,8 @@ Each deployed module contains:
 07_host-apis.md - How Host APIs are injected into the services
 
 100_coding-conventions.md - Coding conventions and best-practices for this repo 
-101_testing-strategy.md - Unit, integration, and fixture testing approach
+101_testing-strategy.md - Testing philosophy, strategy and conventions
+102_testing-best-practices.md - Best practices for approaching testing
+
+
 
