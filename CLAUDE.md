@@ -26,12 +26,48 @@ When implementing new features or fixing bugs:
 - Use `require` for setup/preconditions, `assert` for validations
 - Prefer real dependencies over mocks when possible
 - Use test fixtures with compiled `.wasm` files in `testdata/fixtures/`
+- When implementing test-cases put the test-case comment lines ("// Test: ..") above the test-case they correspond to
 
 ### Key Testing Tools
 - **testify** for assertions and mocking
 - **gotestsum** via taskfile.yml tasks
 - Real WASM compilation for integration tests
 - Black-box validation approach for actor behavior
+
+## Coding Conventions
+
+OKRA follows a **public interface, internal implementation** pattern for all major components. See `docs/100_coding-conventions.md` for full details.
+
+### Core Pattern
+- **Public interfaces** define the contract
+- **Unexported struct implementations** hide details
+- **Public constructors** (`NewX(...)`) return interface types
+
+### Benefits
+- **Encapsulation** - Safe refactoring of internals
+- **Testability** - Interface-driven development and mocking
+- **Clarity** - Clean usage surface
+- **Stability** - Internals can evolve without breaking consumers
+- **Consistency** - Follows idiomatic Go patterns
+
+### Example Structure
+```go
+// Public interface
+type WASMWorkerPool interface {
+    Invoke(ctx context.Context, method string, input []byte) ([]byte, error)
+    Shutdown(ctx context.Context) error
+}
+
+// Public constructor
+func NewWASMWorkerPool(...) WASMWorkerPool {
+    return &wasmWorkerPool{...}
+}
+
+// Unexported implementation
+type wasmWorkerPool struct {
+    // internal fields
+}
+```
 
 ## Project Structure
 This is a Go-based platform for building WebAssembly services with Protobuf definitions, using an actor system (GoAKT) for concurrency and state management.
