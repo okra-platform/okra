@@ -79,3 +79,14 @@ This is a Go-based platform for building WebAssembly services with Protobuf defi
 - Project level tasks are available in taskfile.yml
 - The task command is called `task`
 - To see a list of available commands run `task` with no arguments
+
+## WebAssembly Development
+
+### WASM Compilation and Runtime
+- We are using TinyGo to build Go WASI and Wazero to load and run .wasm files - as such we should make sure we follow TinyGo WASI approach
+- When you need info about how to create a go file that can be built by TinyGo as WASI, please consult this example:
+https://raw.githubusercontent.com/tetratelabs/wazero/refs/heads/main/examples/allocation/tinygo/testdata/greet.go
+
+And these build instructions for TinyGo WASI:
+https://raw.githubusercontent.com/tetratelabs/wazero/refs/heads/main/examples/allocation/tinygo/README.md
+
