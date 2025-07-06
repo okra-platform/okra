@@ -71,3 +71,11 @@ type wasmWorkerPool struct {
 
 ## Project Structure
 This is a Go-based platform for building WebAssembly services with Protobuf definitions, using an actor system (GoAKT) for concurrency and state management.
+
+## Development Tools
+
+### Task Runner
+- This project uses Task (https://taskfile.dev) as the task runner
+- Project level tasks are available in taskfile.yml
+- The task command is called `task`
+- To see a list of available commands run `task` with no arguments
