@@ -17,7 +17,7 @@ At the top of each test file, describe what the component must do — like a che
 
 ```go
 // Test Plan for WASMWorkerPool:
-// - Can initialize with min workers
+// - Can initialize with min and max workers
 // - Invoke returns output from an idle worker
 // - Creates new workers up to max
 // - Blocks if all workers are busy
@@ -26,23 +26,37 @@ At the top of each test file, describe what the component must do — like a che
 // - Shutdown closes all workers
 ```
 
-This helps think through importnat test scenarios up front.  Each test-case comment can be removed after each test is implemented.
+This helps think through important test scenarios up front.  
 
-### 2. Start with the happy path
-Your first test should validate the most common, successful flow.
-Run the test. Ensure it fails with a clear message. Then implement just enough code to make it pass.
+### 2. Plan test cases
+Looking at the test plan comments, think deeply about what test cases will prove correctness of the behavior, including edge cases.  While you want correctness you also want to have each test case be meaningful - the goal is proving correctness with reasonable number of tests cases. Use a single-line comment to describe each test case.
 
-### 3. Add edge cases incrementally
-Once the happy path is working:
+``` go
+// Test: Initializing with min workers greater than max workers should return an error
+```
 
+### 3. Think of a general solution
+Please write a high quality, general purpose solution. Implement a solution that works correctly for all valid inputs, not just the test cases. Do not hard-code values or create solutions that only work for specific test inputs. Instead, implement the actual logic that solves the problem generally.
+
+Focus on understanding the problem requirements and implementing the correct algorithm. Tests are there to verify correctness, not to define the solution. Provide a principled implementation that follows best practices and software design principles.
+
+If the task is unreasonable or infeasible, or if any of the tests are incorrect, please tell me. The solution should be robust, maintainable, and extendable.
+
+### 4. Review & iterate on test cases
+Review the code that has been written and the test cases (written or in comments) to identify any missing test cases.  Add any missing test cases as comments to the test file.
+
+### 5. Implement test cases
+Referring to the test comments in the test-file, implement each test-case one-by-one, ensuring that each one passes before moving on to the next test case.
+Some tips:
 * Add tests for failure modes (timeouts, invalid inputs, etc.)
 * Add concurrency tests (t.Parallel(), race detectors)
 * Add shutdown and cleanup behavior
 * This keeps complexity low and confidence high.
 
-### 4. Review code and test
+### 6. Review code and test
 After tests are complete, make one final pass on the code, refactoring if necessary with this focus:
 * Correctness - is the code doing what it should do, not just passing the tests
+* Good Design - the code solves things high-quality, general purpose way - not just a way that passes the tests
 * Readabiilty & Meaning - if another human or agent reads this code will be immediately clear to them how it works and what it does
 * Consistency - does this code follow existing code styles and naming conventions in this repo
 
