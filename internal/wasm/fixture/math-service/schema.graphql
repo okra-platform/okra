@@ -1,0 +1,12 @@
+type AddInput {
+    a: Int!
+    b: Int!
+}
+
+type AddResponse {
+    sum: Int!
+}
+
+service MathService {
+    add(input: AddInput): AddResponse
+}
