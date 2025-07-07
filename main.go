@@ -67,21 +67,21 @@ func main() {
 			},
 			{
 				Name:  "dev",
-				Usage: "",
+				Usage: "Start development server with hot-reloading",
 				Action: func(ctx context.Context, c *cli.Command) error {
 					return ctrl.Dev(ctx)
 				},
 			},
 			{
 				Name:  "build",
-				Usage: "",
+				Usage: "Build OKRA service package",
 				Action: func(ctx context.Context, c *cli.Command) error {
 					return ctrl.Build(ctx)
 				},
 			},
 			{
 				Name:  "deploy",
-				Usage: "",
+				Usage: "Deploy OKRA service to runtime",
 				Action: func(ctx context.Context, c *cli.Command) error {
 					return ctrl.Deploy(ctx)
 				},
