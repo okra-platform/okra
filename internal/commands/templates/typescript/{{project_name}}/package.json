@@ -1,19 +1,19 @@
 {
   "name": "{{project_name}}",
   "version": "1.0.0",
-  "description": "An OKRA TypeScript project",
+  "description": "OKRA TypeScript service",
   "main": "src/index.ts",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "build": "okra build",
+    "dev": "okra dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "dependencies": {
-    "@okra-platform/okra": "^0.0.1"
-  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "ts-node": "^10.0.0"
+    "esbuild": "^0.20.0",
+    "typescript": "^5.0.0"
   }
 }

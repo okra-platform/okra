@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,7 +143,12 @@ service TestService {
 	// Run dev command - it should handle the TypeScript "not implemented" error
 	err = ctrl.Dev(ctx)
 	
-	// The command should return an error about TypeScript not being implemented
+	// The command should return an error about missing dependencies
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "TypeScript WASM compilation not yet implemented")
+	// It will fail on npm, node_modules, or javy check
+	assert.True(t, 
+		strings.Contains(err.Error(), "npm not found") ||
+		strings.Contains(err.Error(), "node_modules not found") ||
+		strings.Contains(err.Error(), "javy not found"),
+		"Expected dependency error, got: %v", err)
 }

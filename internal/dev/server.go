@@ -270,9 +270,37 @@ func (s *Server) buildWASM() error {
 		cmd.Dir = filepath.Join(s.projectRoot, s.config.Source)
 		
 	case "typescript":
-		// For TypeScript, we'd need a different toolchain
-		// This is a placeholder - actual implementation would use AssemblyScript or similar
-		return fmt.Errorf("TypeScript WASM compilation not yet implemented")
+		// Parse schema first to get service methods
+		schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
+		schemaContent, err := os.ReadFile(schemaPath)
+		if err != nil {
+			return fmt.Errorf("failed to read schema: %w", err)
+		}
+		
+		parsedSchema, err := schema.ParseSchema(string(schemaContent))
+		if err != nil {
+			return fmt.Errorf("failed to parse schema: %w", err)
+		}
+		
+		// Use TypeScript builder
+		builder := NewTypeScriptBuilder(s.config, s.projectRoot, parsedSchema)
+		if err := builder.Build(); err != nil {
+			return fmt.Errorf("TypeScript build failed: %w", err)
+		}
+		
+		// Check output file was created
+		outputPath := filepath.Join(s.projectRoot, s.config.Build.Output)
+		if _, err := os.Stat(outputPath); err != nil {
+			return fmt.Errorf("build succeeded but output file not found: %w", err)
+		}
+		
+		fileInfo, _ := os.Stat(outputPath)
+		fmt.Printf("🏗️  Built %s (%d bytes) in %v\n", 
+			filepath.Base(outputPath), 
+			fileInfo.Size(), 
+			time.Since(start))
+		
+		return nil
 		
 	default:
 		return fmt.Errorf("unsupported language for WASM build: %s", s.config.Language)

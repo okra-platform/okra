@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+*.wasm
+service.interface.ts
+.okra-debug/
+.DS_Store
+*.log
