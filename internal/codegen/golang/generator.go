@@ -33,6 +33,11 @@ func (g *Generator) FileExtension() string {
 
 // Generate generates Go interfaces and types from the schema
 func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
+	// For service interface, always use "types" package
+	if g.packageName == "" {
+		g.packageName = "types"
+	}
+	
 	w := writer.NewWriter("\t")
 
 	// Write package declaration
@@ -78,10 +83,7 @@ func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
 
 // collectImports analyzes the schema and collects required imports
 func (g *Generator) collectImports(s *schema.Schema) {
-	// Check if we need context for service methods
-	if len(s.Services) > 0 {
-		g.imports["context"] = true
-	}
+	// No context needed for WASM services
 
 	// Check for types that might need additional imports
 	for _, typ := range s.Types {
@@ -211,10 +213,10 @@ func (g *Generator) generateServiceInterface(w *writer.Writer, svc schema.Servic
 			w.WriteDocComment(method.Doc)
 		}
 
-		// Generate method signature
+		// Generate method signature (no context for WASM)
 		inputType := g.mapToGoType(method.InputType, true)
 		outputType := g.mapToGoType(method.OutputType, true)
-		w.WriteLinef("%s(ctx context.Context, input %s) (%s, error)", g.exportedName(method.Name), inputType, outputType)
+		w.WriteLinef("%s(input %s) (%s, error)", g.exportedName(method.Name), inputType, outputType)
 
 		if i < len(svc.Methods)-1 {
 			w.BlankLine()

@@ -1,13 +1,13 @@
 @okra(namespace: "{{project_name}}", version: "v1")
 
-service GreeterService {
-  greet(input: GreetRequest): GreetResponse
+service Service {
+  hello(input: HelloInput): HelloOutput
 }
 
-type GreetRequest {
+type HelloInput {
   name: String!
 }
 
-type GreetResponse {
+type HelloOutput {
   message: String!
 }

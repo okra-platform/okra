@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "language": "go",
   "schema": "./service.okra.graphql",
-  "source": "./",
+  "source": "./service",
   "build": {
     "output": "./build/service.wasm"
   },

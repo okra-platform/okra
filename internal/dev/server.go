@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -227,7 +226,12 @@ func (s *Server) generateCode(schemaPath string) error {
 	var outputPath string
 	switch s.config.Language {
 	case "go":
-		outputPath = filepath.Join(s.projectRoot, "service.interface.go")
+		// For Go, create types directory and write interface there
+		typesDir := filepath.Join(s.projectRoot, "types")
+		if err := os.MkdirAll(typesDir, 0755); err != nil {
+			return fmt.Errorf("failed to create types directory: %w", err)
+		}
+		outputPath = filepath.Join(typesDir, "interface.go")
 	case "typescript":
 		outputPath = filepath.Join(s.projectRoot, s.config.Source, "service.interface.ts")
 	default:
@@ -252,22 +256,39 @@ func (s *Server) buildWASM() error {
 		return fmt.Errorf("failed to create build directory: %w", err)
 	}
 
-	var cmd *exec.Cmd
-	
 	switch s.config.Language {
 	case "go":
-		// Use TinyGo to build WASM
-		cmd = exec.Command(
-			"tinygo", "build",
-			"-o", s.config.Build.Output,
-			"-target", "wasi",
-			"-scheduler=none",
-			"-gc=conservative",
-			"-opt=2",
-			"-no-debug",
-			".",
-		)
-		cmd.Dir = filepath.Join(s.projectRoot, s.config.Source)
+		// Parse schema first to get service methods
+		schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
+		schemaContent, err := os.ReadFile(schemaPath)
+		if err != nil {
+			return fmt.Errorf("failed to read schema: %w", err)
+		}
+		
+		parsedSchema, err := schema.ParseSchema(string(schemaContent))
+		if err != nil {
+			return fmt.Errorf("failed to parse schema: %w", err)
+		}
+		
+		// Use Go builder with hidden wrapper
+		builder := NewGoBuilder(s.config, s.projectRoot, parsedSchema)
+		if err := builder.Build(); err != nil {
+			return fmt.Errorf("Go build failed: %w", err)
+		}
+		
+		// Check output file was created
+		outputPath := filepath.Join(s.projectRoot, s.config.Build.Output)
+		if _, err := os.Stat(outputPath); err != nil {
+			return fmt.Errorf("build succeeded but output file not found: %w", err)
+		}
+		
+		fileInfo, _ := os.Stat(outputPath)
+		fmt.Printf("🏗️  Built %s (%d bytes) in %v\n", 
+			filepath.Base(outputPath), 
+			fileInfo.Size(), 
+			time.Since(start))
+		
+		return nil
 		
 	case "typescript":
 		// Parse schema first to get service methods
@@ -305,24 +326,4 @@ func (s *Server) buildWASM() error {
 	default:
 		return fmt.Errorf("unsupported language for WASM build: %s", s.config.Language)
 	}
-
-	// Run the build command
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("build command failed: %w\nOutput:\n%s", err, string(output))
-	}
-
-	// Check if output file was created
-	outputPath := filepath.Join(s.projectRoot, s.config.Build.Output)
-	if _, err := os.Stat(outputPath); err != nil {
-		return fmt.Errorf("build succeeded but output file not found: %w", err)
-	}
-
-	fileInfo, _ := os.Stat(outputPath)
-	fmt.Printf("🏗️  Built %s (%d bytes) in %v\n", 
-		filepath.Base(outputPath), 
-		fileInfo.Size(), 
-		time.Since(start))
-	
-	return nil
 }
