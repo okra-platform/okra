@@ -16,10 +16,10 @@ Service-to-service communication in OKRA is built on top of GoAKT, but this is *
 
 The generated stub for each dependency:
 
-1. **Serializes** the input Protobuf message to `[]byte`
+1. **Serializes** the input to JSON as `[]byte`
 2. **Calls a host function** injected by the actor
 3. **Receives raw response bytes**
-4. **Deserializes** the response into the expected Protobuf type
+4. **Deserializes** the JSON response into the expected type
 
 From the perspective of the service, it’s a normal method call.
 

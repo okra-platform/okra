@@ -1,13 +1,13 @@
 # OKRA Overview
 
-OKRA is an open-source platform for building **secufe, scalable, type-safe backend services** using **WebAssembly (WASM)** and **Protobuf**.  Under the hood it uses an **Actor System** to support features like Stateful Services, Singleton Services, Service Discovery, Passivation (scale to zero).
+OKRA is an open-source platform for building **secure, scalable, type-safe backend services** using **WebAssembly (WASM)** and a **GraphQL-based IDL**.  Under the hood it uses an **Actor System** to support features like Stateful Services, Singleton Services, Service Discovery, Passivation (scale to zero).
 
-It is designed deliver amazing DX while also providing automatic observabiilty and enteprise governance.  For example:
-- Define services in `.proto` files
+It is designed to deliver amazing DX while also providing automatic observability and enterprise governance.  For example:
+- Define services using GraphQL-style schema files with `type`, `enum`, and `service` declarations
 - Implement logic in plain Go, TypeScript, or other WASM-compatible languages
 - Deploy those services as secure, composable backend components
 - Scale safely with built-in concurrency, state, and isolation features
-- Control the exact Host API surface area a sevice has accress to
+- Control the exact Host API surface area a service has access to
 
 OKRA is inspired by systems like Modus, Elixir, Temporal, and Caddy — with a focus on:
 - **Simple defaults**
@@ -23,14 +23,14 @@ OKRA is inspired by systems like Modus, Elixir, Temporal, and Caddy — with a f
 A CLI tool (`okra`) that allows users to do the following: 
 - `init`: create new projects
 - `dev`: develop okra services locally 
-- `build`: building service code and creating an okra package which includes a manifest, the WASM module (.wasm) and the compiled protobuf descrtiptors (.pb.bin) 
+- `build`: building service code and creating an okra package which includes a manifest, the WASM module (.wasm) and the compiled service description (service.description.json) 
 - `deplooy`: deploying the services to a cluster
 
 ### OKRA Runtime
 The runtime service that is responsible for creating the ***Actor System***, deploying okra packages to it and exposing services to ConnectRPC/gRPC (for exposed services).
 
 ### Service
-User code defined by a .proto definition and implemented in plain Go, Typescript, etc.
+User code defined by a GraphQL schema and implemented in plain Go, Typescript, etc.
 - Is compiled to WASM buy OKRA
 - Can be exposed internally to other services by name
 - Can be exposed via ConnectRPC/gRPC
@@ -58,7 +58,7 @@ A singelton actor (GoAKT SingletonActor) that only exists once in the cluster an
 ### OKRA Package (.okra.pkg)
 Each deployed module contains:
 - service.wasm: The compiled logic
-- service.pb.bin: The descriptor set for the .proto
+- service.description.json: The JSON description of the parsed GraphQL IDL
 - okra.service.json: manifest and configuration file that describes the service
 
 ## Related Docs

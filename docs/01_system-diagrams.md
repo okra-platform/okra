@@ -43,14 +43,14 @@ sequenceDiagram
     participant Pool as WorkerPool
     participant Module as handle_request()
 
-    Client->>RPCServer: Protobuf Request (e.g. CreateUser)
-    RPCServer->>Actor: ServiceRequest (method, input bytes)
+    Client->>RPCServer: Request (e.g. CreateUser via Connect/gRPC/JSON)
+    RPCServer->>Actor: ServiceRequest (method, JSON input bytes)
     Actor->>Pool: Invoke(method, input)
     Pool->>Module: handle_request(method, input)
-    Module-->>Pool: Serialized Protobuf response
+    Module-->>Pool: Serialized JSON response
     Pool-->>Actor: Response bytes
     Actor-->>RPCServer: ServiceResponse
-    RPCServer-->>Client: Protobuf Response
+    RPCServer-->>Client: Response (Connect/gRPC/JSON)
 ```
 
 ### Internal Service-to-Service Flow

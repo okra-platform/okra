@@ -36,7 +36,7 @@ Test how parts of the system fit together — usually through the boundary of:
 
 **Guidelines:**
 - Use real `.wasm` files compiled from minimal guest code (or include `.wat → .wasm` fixtures).
-- Run real descriptor resolution using `.pb.bin` files.
+- Run real schema validation using `service.description.json` files.
 - Prefer `black-box` validation: treat the actor as a unit and assert observable behavior.
 
 **Examples:**
@@ -51,7 +51,7 @@ Test how parts of the system fit together — usually through the boundary of:
 Validate that generated guest-side stubs (Go, TS, etc.) correctly compile, expose expected signatures, and work with real host APIs.
 
 **Guidelines:**
-- Include example `.proto` files and generated guest stubs in `testdata/fixtures/`
+- Include example GraphQL schema files and generated guest stubs in `testdata/fixtures/`
 - Compile guest WASM using a build matrix (TinyGo, AssemblyScript, etc.)
 - Test against real host modules using simulated messages or the full runtime
 
@@ -78,7 +78,7 @@ Test the developer-facing CLI experience (`okra build`, `okra run`, `okra test`)
 | Goal | Approach |
 |------|----------|
 | 🟢 Fast feedback on core components | Use mock-based unit tests |
-| 🔒 Type-safe runtime schema validation | Use real `.pb.bin` descriptors |
+| 🔒 Type-safe runtime schema validation | Use real `service.description.json` files |
 | ⚙️ Confidence in WASM memory & ABI | Test with compiled guest modules |
 | 🔄 Cross-service contract fidelity | Use generated stubs and simulate full request/response |
 | 🧰 Developer confidence | Build fixtures that mimic real usage: compile, load, run, assert |
@@ -97,9 +97,9 @@ internal/
 testdata/
   fixtures/
     math/
-      math.proto
+      math.graphql
       math.wasm
-      math.pb.bin
+      service.description.json
       main.go            # Guest service source (optional)
 ```
 

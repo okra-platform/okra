@@ -22,13 +22,13 @@ Instead, the **OKRA runtime itself**:
 
 When a client makes an external call:
 
-1. OKRA's ConnectRPC server receives a Protobuf request (e.g., `CreateUser`)
-2. The runtime wraps the request into a `ServiceRequest`:
+1. OKRA's ConnectRPC server receives a request (e.g., `CreateUser`) via Connect/gRPC/JSON
+2. The runtime normalizes all inbound calls into a `ServiceRequest` envelope:
    - `method`: fully qualified method name (e.g., `UserService.CreateUser`)
-   - `input`: serialized Protobuf message (`[]byte`)
+   - `input`: JSON-encoded payload (`[]byte`)
 3. Sends the request to the actor registered under the service name (`UserService`)
 4. Waits for a response (`[]byte`)
-5. Deserializes the response and returns it to the client
+5. Returns the response to the client in the appropriate format (Connect/gRPC/JSON)
 
 ---
 
@@ -36,7 +36,10 @@ When a client makes an external call:
 
 - **ConnectRPC** (default; supports gRPC, gRPC-web, and REST over HTTP/2/1.1)
 - **gRPC** (native gRPC clients)
-- Future: REST/GraphQL gateways could layer on top
+- **JSON** (REST-style endpoints)
+- **GraphQL** (query endpoints)
+
+All protocols are normalized into the same `ServiceRequest` envelope internally.
 
 ---
 

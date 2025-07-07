@@ -1,13 +1,13 @@
 # WASM Actors and Worker Pool
 
-This doc outlines the architecture and design of `WASMActor`, `WASMSingletonActor`, and the supporting `WASMWorkerPool`. These components enable efficient, scalable execution of Protobuf-driven service methods compiled to WebAssembly (WASM).
+This doc outlines the architecture and design of `WASMActor`, `WASMSingletonActor`, and the supporting `WASMWorkerPool`. These components enable efficient, scalable execution of GraphQL-defined service methods compiled to WebAssembly (WASM).
 
 ---
 
 ## WASMActor
 
 - Regular GoAKT actor
-- Addressed via the fully qualified Protobuf service name
+- Addressed via the fully qualified service name
 - Initialized with:
   - `[]byte` WASM binary
   - min/max instance count
@@ -57,12 +57,12 @@ type WASMWorkerPool interface {
 The typical request lifecycle for a WASM-backed service:
 
 1. **Client** sends a `ServiceRequest` to an actor with:
-   - Target actor ID = Protobuf service name
+   - Target actor ID = service name
    - Method name (as string)
-   - Input payload (as raw `bytes`)
+   - Input payload (JSON as raw `bytes`)
 
 2. **Actor** receives the message and:
-   - Validates the method and payload using the registered Protobuf descriptor
+   - Validates the method and payload using the service description
    - Delegates execution to the `WASMWorkerPool`
 
 3. **WASMWorkerPool**:
@@ -91,7 +91,7 @@ sequenceDiagram
     participant Module (Wazero Module)
 
     Client->>Actor (WASMActor): ServiceRequest(method, input: bytes)
-    Actor->>Actor: Validate method + input using descriptor
+    Actor->>Actor: Validate method + input using service description
     Actor->>Pool: Invoke(ctx, method, input)
     Pool->>Worker: Acquire or instantiate worker
     Worker->>Module: Write input to memory
