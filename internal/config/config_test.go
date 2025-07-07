@@ -110,6 +110,8 @@ func TestLoadConfigFromPath(t *testing.T) {
 				assert.Contains(t, got.Dev.Exclude, "build/")
 				assert.Contains(t, got.Dev.Exclude, "node_modules/")
 				assert.Contains(t, got.Dev.Exclude, ".git/")
+				assert.Contains(t, got.Dev.Exclude, "service.interface.go")
+				assert.Contains(t, got.Dev.Exclude, "service.interface.ts")
 			}
 		})
 	}

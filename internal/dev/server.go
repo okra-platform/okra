@@ -115,7 +115,7 @@ func (s *Server) isSourceFile(path string) bool {
 
 // handleSchemaChange handles changes to .okra.graphql files
 func (s *Server) handleSchemaChange(path string) {
-	fmt.Println("🔄 Schema changed, regenerating code...")
+	fmt.Println("🔄 Schema changed, regenerating interface...")
 	
 	s.buildMutex.Lock()
 	s.building = true
@@ -127,14 +127,14 @@ func (s *Server) handleSchemaChange(path string) {
 		s.buildMutex.Unlock()
 	}()
 
-	// Parse schema
+	// Regenerate service interface from schema
 	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
 	if err := s.generateCode(schemaPath); err != nil {
-		fmt.Printf("❌ Code generation failed: %v\n", err)
+		fmt.Printf("❌ Interface generation failed: %v\n", err)
 		return
 	}
 
-	// Rebuild WASM
+	// Rebuild WASM with new interface
 	if err := s.buildWASM(); err != nil {
 		fmt.Printf("❌ WASM build failed: %v\n", err)
 		return
@@ -175,10 +175,10 @@ func (s *Server) handleSourceChange(path string) {
 func (s *Server) buildAll() error {
 	fmt.Println("🔨 Running initial build...")
 	
-	// Generate code from schema
+	// Generate service interface from schema
 	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
 	if err := s.generateCode(schemaPath); err != nil {
-		return fmt.Errorf("code generation failed: %w", err)
+		return fmt.Errorf("interface generation failed: %w", err)
 	}
 
 	// Build WASM
@@ -223,10 +223,19 @@ func (s *Server) generateCode(schemaPath string) error {
 		return fmt.Errorf("code generation failed: %w", err)
 	}
 
-	// Write generated code
-	outputPath := filepath.Join(s.projectRoot, "generated."+generator.FileExtension())
+	// Write generated interface file
+	var outputPath string
+	switch s.config.Language {
+	case "go":
+		outputPath = filepath.Join(s.projectRoot, "service.interface.go")
+	case "typescript":
+		outputPath = filepath.Join(s.projectRoot, s.config.Source, "service.interface.ts")
+	default:
+		outputPath = filepath.Join(s.projectRoot, "service.interface"+generator.FileExtension())
+	}
+	
 	if err := os.WriteFile(outputPath, code, 0644); err != nil {
-		return fmt.Errorf("failed to write generated code: %w", err)
+		return fmt.Errorf("failed to write generated interface: %w", err)
 	}
 
 	fmt.Printf("📄 Generated %s in %v\n", filepath.Base(outputPath), time.Since(start))

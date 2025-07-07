@@ -9,6 +9,6 @@
   },
   "dev": {
     "watch": ["*.go", "**/*.go", "*.okra.graphql", "**/*.okra.graphql"],
-    "exclude": ["*_test.go", "build/", ".git/"]
+    "exclude": ["*_test.go", "build/", ".git/", "service.interface.go"]
   }
 }

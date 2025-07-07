@@ -9,6 +9,6 @@
   },
   "dev": {
     "watch": ["*.ts", "**/*.ts", "*.okra.graphql", "**/*.okra.graphql"],
-    "exclude": ["*.test.ts", "build/", "node_modules/", ".git/"]
+    "exclude": ["*.test.ts", "build/", "node_modules/", ".git/", "service.interface.ts"]
   }
 }

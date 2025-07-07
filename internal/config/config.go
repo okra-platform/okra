@@ -73,7 +73,7 @@ func LoadConfigFromPath(path string) (*Config, error) {
 		}
 	}
 	if len(config.Dev.Exclude) == 0 {
-		config.Dev.Exclude = []string{"*_test.go", "build/", "node_modules/", ".git/"}
+		config.Dev.Exclude = []string{"*_test.go", "build/", "node_modules/", ".git/", "service.interface.go", "service.interface.ts"}
 	}
 
 	return &config, nil
