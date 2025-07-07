@@ -60,7 +60,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:  "init",
-				Usage: "",
+				Usage: "Create a new OKRA project from a template",
 				Action: func(ctx context.Context, c *cli.Command) error {
 					return ctrl.Init(ctx)
 				},

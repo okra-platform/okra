@@ -1,0 +1,11 @@
+{
+  "name": "okra-go-template",
+  "description": "OKRA Go project template",
+  "version": "1.0.0",
+  "variables": {
+    "project_name": {
+      "description": "Project name",
+      "default": "my-okra-project"
+    }
+  }
+}

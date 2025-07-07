@@ -16,10 +16,6 @@ type Controller struct {
 }
 
 
-func (c *Controller) Init(ctx context.Context) error {
-	fmt.Println("Hello World!")
-	return nil
-}
 
 func (c *Controller) Dev(ctx context.Context) error {
 	fmt.Println("Hello World!")
