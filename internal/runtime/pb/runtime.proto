@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package runtime;
+
+option go_package = "github.com/okra-platform/okra/internal/runtime/pb";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+
+// ServiceRequest represents a request to execute a service method
+message ServiceRequest {
+  // Unique identifier for this request
+  string id = 1;
+  
+  // Name of the service method to invoke
+  string method = 2;
+  
+  // JSON-encoded input for the method
+  bytes input = 3;
+  
+  // Optional request metadata
+  map<string, string> metadata = 4;
+  
+  // Maximum time for execution
+  google.protobuf.Duration timeout = 5;
+}
+
+// ServiceResponse represents the response from a service method execution
+message ServiceResponse {
+  // Matches the request ID
+  string id = 1;
+  
+  // Indicates if the request was successful
+  bool success = 2;
+  
+  // JSON-encoded output from the method (if successful)
+  bytes output = 3;
+  
+  // Error information (if not successful)
+  ServiceError error = 4;
+  
+  // Optional response metadata
+  map<string, string> metadata = 5;
+  
+  // How long the execution took
+  google.protobuf.Duration duration = 6;
+}
+
+// ServiceError represents an error from service execution
+message ServiceError {
+  // Error code (e.g., "VALIDATION_ERROR", "EXECUTION_ERROR")
+  string code = 1;
+  
+  // Human-readable error message
+  string message = 2;
+  
+  // Additional error context
+  map<string, google.protobuf.Any> details = 3;
+}
+
+// HealthCheck is used to verify actor is alive
+message HealthCheck {
+  string ping = 1;
+}
+
+// HealthCheckResponse confirms actor is alive
+message HealthCheckResponse {
+  string pong = 1;
+  bool ready = 2;
+}

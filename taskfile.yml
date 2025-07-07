@@ -53,3 +53,13 @@ tasks:
     dir: internal/wasm/fixture/math-service
     cmds:
       - tinygo build -o math-service.wasm -target wasi -scheduler=none -gc=conservative -opt=2 -no-debug .
+
+  proto:gen-runtime-types:
+    desc: Generate Go code from protobuf definitions for runtime types
+    cmds:
+      - buf generate internal/runtime/pb/runtime.proto
+    preconditions:
+      - sh: command -v buf
+        msg: "buf is required but not installed. Visit https://buf.build/docs/installation for installation instructions."
+      - sh: command -v protoc-gen-go
+        msg: "protoc-gen-go is required but not installed. Run: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"
