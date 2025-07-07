@@ -104,9 +104,13 @@ func (s *Server) handleFileChange(path string, op fsnotify.Op) {
 func (s *Server) isSourceFile(path string) bool {
 	switch s.config.Language {
 	case "go":
-		return strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
+		return strings.HasSuffix(path, ".go") && 
+			!strings.HasSuffix(path, "_test.go") &&
+			!strings.HasSuffix(path, "interface.go")
 	case "typescript":
-		return strings.HasSuffix(path, ".ts") && !strings.HasSuffix(path, ".test.ts")
+		return strings.HasSuffix(path, ".ts") && 
+			!strings.HasSuffix(path, ".test.ts") &&
+			!strings.HasSuffix(path, ".interface.ts")
 	default:
 		return false
 	}

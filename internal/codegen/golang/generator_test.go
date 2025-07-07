@@ -117,14 +117,12 @@ func TestGenerator_Services(t *testing.T) {
 	require.NoError(t, err)
 	
 	result := string(code)
-	assert.Contains(t, result, "import (")
-	assert.Contains(t, result, "\"context\"")
 	assert.Contains(t, result, "// UserService manages user operations")
 	assert.Contains(t, result, "type UserService interface {")
 	assert.Contains(t, result, "// GetUser retrieves a user by ID")
-	assert.Contains(t, result, "GetUser(ctx context.Context, input GetUserRequest) (User, error)")
+	assert.Contains(t, result, "GetUser(input GetUserRequest) (User, error)")
 	assert.Contains(t, result, "// CreateUser creates a new user")
-	assert.Contains(t, result, "CreateUser(ctx context.Context, input CreateUserRequest) (CreateUserResponse, error)")
+	assert.Contains(t, result, "CreateUser(input CreateUserRequest) (CreateUserResponse, error)")
 }
 
 func TestGenerator_ArrayTypes(t *testing.T) {
@@ -279,7 +277,6 @@ func TestGenerator_CompleteExample(t *testing.T) {
 	// Check structure
 	assert.Contains(t, result, "package api")
 	assert.Contains(t, result, "import (")
-	assert.Contains(t, result, "\"context\"")
 	assert.Contains(t, result, "\"time\"")
 	
 	// Check enum
@@ -292,7 +289,7 @@ func TestGenerator_CompleteExample(t *testing.T) {
 	
 	// Check service
 	assert.Contains(t, result, "type UserService interface")
-	assert.Contains(t, result, "GetUser(ctx context.Context, input GetUserRequest) (User, error)")
+	assert.Contains(t, result, "GetUser(input GetUserRequest) (User, error)")
 }
 
 
