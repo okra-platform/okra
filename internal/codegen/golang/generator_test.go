@@ -1,8 +1,6 @@
 package golang
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -297,45 +295,6 @@ func TestGenerator_CompleteExample(t *testing.T) {
 	assert.Contains(t, result, "GetUser(ctx context.Context, input GetUserRequest) (User, error)")
 }
 
-func TestGenerator_GenerateToFile(t *testing.T) {
-	// Test: File generation with mocked filesystem operations
-	g := NewGenerator("test")
-	s := &schema.Schema{
-		Types: []schema.ObjectType{
-			{Name: "TestType", Fields: []schema.Field{{Name: "field", Type: "String", Required: true}}},
-		},
-	}
-	
-	// Create a temporary directory for testing
-	tmpDir := t.TempDir()
-	outputPath := filepath.Join(tmpDir, "output", "generated.go")
-	
-	// Override helper functions for testing
-	originalEnsureDir := ensureDir
-	originalWriteFile := writeFile
-	defer func() {
-		ensureDir = originalEnsureDir
-		writeFile = originalWriteFile
-	}()
-	
-	ensureDir = func(dir string) error {
-		return os.MkdirAll(dir, 0755)
-	}
-	
-	writeFile = func(path string, data []byte) error {
-		return os.WriteFile(path, data, 0644)
-	}
-	
-	// Generate file
-	err := g.GenerateToFile(s, outputPath)
-	require.NoError(t, err)
-	
-	// Verify file was created
-	content, err := os.ReadFile(outputPath)
-	require.NoError(t, err)
-	assert.Contains(t, string(content), "package test")
-	assert.Contains(t, string(content), "type TestType struct")
-}
 
 func TestGenerator_FieldNameExport(t *testing.T) {
 	// Test: Field names are properly exported

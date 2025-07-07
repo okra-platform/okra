@@ -1,12 +1,9 @@
 package golang
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/okra-platform/okra/internal/codegen"
+	"github.com/okra-platform/okra/internal/codegen/writer"
 	"github.com/okra-platform/okra/internal/schema"
 )
 
@@ -24,9 +21,19 @@ func NewGenerator(packageName string) *Generator {
 	}
 }
 
+// Language returns the name of the target language
+func (g *Generator) Language() string {
+	return "go"
+}
+
+// FileExtension returns the file extension for generated files
+func (g *Generator) FileExtension() string {
+	return ".go"
+}
+
 // Generate generates Go interfaces and types from the schema
 func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
-	w := codegen.NewWriter("\t")
+	w := writer.NewWriter("\t")
 
 	// Write package declaration
 	w.WriteLinef("package %s", g.packageName)
@@ -68,27 +75,6 @@ func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-// GenerateToFile generates Go code and writes it to a file
-func (g *Generator) GenerateToFile(s *schema.Schema, filePath string) error {
-	// Ensure directory exists
-	dir := filepath.Dir(filePath)
-	if err := ensureDir(dir); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
-	// Generate code
-	code, err := g.Generate(s)
-	if err != nil {
-		return fmt.Errorf("failed to generate code: %w", err)
-	}
-
-	// Write to file
-	if err := writeFile(filePath, code); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	return nil
-}
 
 // collectImports analyzes the schema and collects required imports
 func (g *Generator) collectImports(s *schema.Schema) {
@@ -129,7 +115,7 @@ func (g *Generator) checkTypeImports(typ string) {
 }
 
 // generateEnum generates Go code for an enum type
-func (g *Generator) generateEnum(w *codegen.Writer, enum schema.EnumType) {
+func (g *Generator) generateEnum(w *writer.Writer, enum schema.EnumType) {
 	// Write documentation
 	w.WriteDocComment(enum.Doc)
 
@@ -180,7 +166,7 @@ func (g *Generator) generateEnum(w *codegen.Writer, enum schema.EnumType) {
 }
 
 // generateType generates Go struct for an object type
-func (g *Generator) generateType(w *codegen.Writer, typ schema.ObjectType) {
+func (g *Generator) generateType(w *writer.Writer, typ schema.ObjectType) {
 	// Write documentation
 	w.WriteDocComment(typ.Doc)
 
@@ -206,7 +192,7 @@ func (g *Generator) generateType(w *codegen.Writer, typ schema.ObjectType) {
 }
 
 // generateServiceInterface generates Go interface for a service
-func (g *Generator) generateServiceInterface(w *codegen.Writer, svc schema.Service) {
+func (g *Generator) generateServiceInterface(w *writer.Writer, svc schema.Service) {
 	// Write documentation
 	if svc.Doc != "" {
 		w.WriteDocComment(svc.Doc)
@@ -304,13 +290,3 @@ func (g *Generator) exportedName(name string) string {
 	return strings.ToUpper(name[:1]) + name[1:]
 }
 
-// Helper functions for file operations
-var (
-	ensureDir = func(dir string) error {
-		return os.MkdirAll(dir, 0755)
-	}
-	
-	writeFile = func(path string, data []byte) error {
-		return os.WriteFile(path, data, 0644)
-	}
-)
