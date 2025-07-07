@@ -52,4 +52,4 @@ tasks:
     desc: Build the math-service test fixture WASM using TinyGo
     dir: internal/wasm/fixture/math-service
     cmds:
-      - tinygo build -o math-service.wasm -target wasi -scheduler=none -gc=conservative -opt=2 .
+      - tinygo build -o math-service.wasm -target wasi -scheduler=none -gc=conservative -opt=2 -no-debug .

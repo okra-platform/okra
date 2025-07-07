@@ -23,7 +23,7 @@ func (s *mathServiceImpl) Add(input *AddInput) (*AddResponse, error) {
 var service MathService
 
 func main() {
-	// Required for WASI
+	// Reactor module - main should not be called
 }
 
 //export _initialize

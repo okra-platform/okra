@@ -20,21 +20,6 @@ type WASMWorkerPool interface {
 	Shutdown(ctx context.Context) error
 }
 
-// WASMWorker represents a single WASM worker instance.
-type WASMWorker interface {
-	Invoke(ctx context.Context, method string, input []byte) ([]byte, error)
-	Close(ctx context.Context) error
-}
-
-// WASMCompiledModule represents a compiled WASM module that can create worker instances.
-type WASMCompiledModule interface {
-	// Instantiate creates a new isolated WASMWorker.
-	// Each worker is backed by a fresh module instance.
-	Instantiate(ctx context.Context) (WASMWorker, error)
-
-	// Close cleans up any resources tied to the compiled module.
-	Close(ctx context.Context) error
-}
 
 // WASMWorkerPoolConfig holds configuration for the worker pool.
 type WASMWorkerPoolConfig struct {
