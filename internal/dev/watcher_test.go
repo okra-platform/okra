@@ -44,9 +44,9 @@ func TestFileWatcher_shouldWatch(t *testing.T) {
 		},
 		{
 			name:     "match graphql file",
-			patterns: []string{"*.okra.graphql", "**/*.okra.graphql"},
+			patterns: []string{"*.okra.gql", "**/*.okra.gql"},
 			exclude:  []string{},
-			path:     "/project/schema/service.okra.graphql",
+			path:     "/project/schema/service.okra.gql",
 			want:     true,
 		},
 		{
@@ -122,7 +122,7 @@ func TestFileWatcher_Integration(t *testing.T) {
 	
 	// Create watcher
 	fw, err := NewFileWatcher(
-		[]string{"*.go", "**/*.go", "*.okra.graphql"},
+		[]string{"*.go", "**/*.go", "*.okra.gql"},
 		[]string{"*_test.go", "vendor/"},
 		onChange,
 	)
@@ -156,7 +156,7 @@ func TestFileWatcher_Integration(t *testing.T) {
 	require.NoError(t, err)
 	
 	// Test 3: Create a GraphQL file (should trigger)
-	graphqlFile := filepath.Join(tmpDir, "service.okra.graphql")
+	graphqlFile := filepath.Join(tmpDir, "service.okra.gql")
 	err = os.WriteFile(graphqlFile, []byte("type Query { hello: String }"), 0644)
 	require.NoError(t, err)
 	
@@ -181,7 +181,7 @@ func TestFileWatcher_Integration(t *testing.T) {
 	eventsMu.Lock()
 	defer eventsMu.Unlock()
 	
-	// Should have events for: main.go, service.okra.graphql, handler.go
+	// Should have events for: main.go, service.okra.gql, handler.go
 	assert.GreaterOrEqual(t, len(events), 3, "Expected at least 3 events")
 	
 	// Verify expected files triggered events
@@ -191,7 +191,7 @@ func TestFileWatcher_Integration(t *testing.T) {
 	}
 	
 	assert.True(t, fileNames["main.go"], "Expected event for main.go")
-	assert.True(t, fileNames["service.okra.graphql"], "Expected event for service.okra.graphql")
+	assert.True(t, fileNames["service.okra.gql"], "Expected event for service.okra.gql")
 	assert.True(t, fileNames["handler.go"], "Expected event for handler.go")
 	assert.False(t, fileNames["main_test.go"], "Should not have event for main_test.go")
 	assert.False(t, fileNames["lib.go"], "Should not have event for vendor/lib.go")

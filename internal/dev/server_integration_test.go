@@ -21,7 +21,7 @@ func TestServer_BuildAll_Go(t *testing.T) {
 			"name": "test-service",
 			"version": "1.0.0",
 			"language": "go",
-			"schema": "./service.okra.graphql",
+			"schema": "./service.okra.gql",
 			"source": "./service",
 			"build": {
 				"output": "./build/service.wasm"
@@ -32,7 +32,7 @@ func TestServer_BuildAll_Go(t *testing.T) {
 
 	// Create schema
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, "service.okra.graphql"),
+		filepath.Join(tmpDir, "service.okra.gql"),
 		[]byte(`@okra(namespace: "test", version: "v1")
 
 service MathService {
@@ -128,13 +128,13 @@ func TestServer_FileWatcher_Setup(t *testing.T) {
 			"name": "test-service",
 			"version": "1.0.0",
 			"language": "go",
-			"schema": "./service.okra.graphql",
+			"schema": "./service.okra.gql",
 			"source": "./",
 			"build": {
 				"output": "./build/service.wasm"
 			},
 			"dev": {
-				"watch": ["*.go", "*.okra.graphql"],
+				"watch": ["*.go", "*.okra.gql"],
 				"exclude": ["build/"]
 			}
 		}`),
@@ -142,7 +142,7 @@ func TestServer_FileWatcher_Setup(t *testing.T) {
 	))
 
 	require.NoError(t, os.WriteFile(
-		filepath.Join(tmpDir, "service.okra.graphql"),
+		filepath.Join(tmpDir, "service.okra.gql"),
 		[]byte(`@okra(namespace: "test", version: "v1")
 service Service {
   hello(input: HelloInput): HelloOutput

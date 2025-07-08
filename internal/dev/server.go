@@ -93,7 +93,7 @@ func (s *Server) handleFileChange(path string, op fsnotify.Op) {
 	fmt.Printf("\n📝 File %s: %s\n", action, relPath)
 
 	// Determine what kind of file changed
-	if strings.HasSuffix(path, ".okra.graphql") {
+	if strings.HasSuffix(path, ".okra.gql") {
 		s.handleSchemaChange(path)
 	} else if s.isSourceFile(path) {
 		s.handleSourceChange(path)
@@ -116,7 +116,7 @@ func (s *Server) isSourceFile(path string) bool {
 	}
 }
 
-// handleSchemaChange handles changes to .okra.graphql files
+// handleSchemaChange handles changes to .okra.gql files
 func (s *Server) handleSchemaChange(path string) {
 	fmt.Println("🔄 Schema changed, regenerating interface...")
 	

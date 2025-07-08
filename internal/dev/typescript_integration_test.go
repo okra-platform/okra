@@ -38,13 +38,13 @@ func TestTypeScriptDevelopmentWorkflow_Integration(t *testing.T) {
 		Name:     "test-service",
 		Version:  "1.0.0",
 		Language: "typescript",
-		Schema:   "./service.okra.graphql",
+		Schema:   "./service.okra.gql",
 		Source:   "./src",
 		Build: config.BuildConfig{
 			Output: "./build/service.wasm",
 		},
 		Dev: config.DevConfig{
-			Watch:   []string{"*.ts", "**/*.ts", "*.okra.graphql", "**/*.okra.graphql"},
+			Watch:   []string{"*.ts", "**/*.ts", "*.okra.gql", "**/*.okra.gql"},
 			Exclude: []string{"*.test.ts", "build/", "node_modules/", ".git/", "service.interface.ts"},
 		},
 	}
@@ -113,7 +113,7 @@ type GreetResponse {
 	message: String!
 }
 `
-		schemaPath := filepath.Join(projectDir, "service.okra.graphql")
+		schemaPath := filepath.Join(projectDir, "service.okra.gql")
 		err := os.WriteFile(schemaPath, []byte(newSchema), 0644)
 		require.NoError(t, err)
 
@@ -158,13 +158,13 @@ func setupTypeScriptProject(t *testing.T, projectDir string) {
   "name": "test-service",
   "version": "1.0.0",
   "language": "typescript",
-  "schema": "./service.okra.graphql",
+  "schema": "./service.okra.gql",
   "source": "./src",
   "build": {
     "output": "./build/service.wasm"
   },
   "dev": {
-    "watch": ["*.ts", "**/*.ts", "*.okra.graphql", "**/*.okra.graphql"],
+    "watch": ["*.ts", "**/*.ts", "*.okra.gql", "**/*.okra.gql"],
     "exclude": ["*.test.ts", "build/", "node_modules/", ".git/", "service.interface.ts"]
   }
 }`
@@ -187,7 +187,7 @@ type GreetResponse {
 	message: String!
 }
 `
-	err = os.WriteFile(filepath.Join(projectDir, "service.okra.graphql"), []byte(schema), 0644)
+	err = os.WriteFile(filepath.Join(projectDir, "service.okra.gql"), []byte(schema), 0644)
 	require.NoError(t, err)
 
 	// Create package.json
@@ -244,7 +244,7 @@ func TestTypeScriptConcurrentBuilds(t *testing.T) {
 		config: &config.Config{
 			Language: "typescript",
 			Source:   "./src",
-			Schema:   "./service.okra.graphql",
+			Schema:   "./service.okra.gql",
 			Build: config.BuildConfig{
 				Output: "./build/service.wasm",
 			},

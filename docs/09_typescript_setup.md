@@ -34,7 +34,7 @@ Before you can build TypeScript OKRA services, you need to install:
    ```
    your-project/
    ├── okra.json              # Project configuration
-   ├── service.okra.graphql   # Service schema definition
+   ├── service.okra.gql   # Service schema definition
    ├── package.json           # Node.js dependencies
    ├── tsconfig.json          # TypeScript configuration
    └── src/
@@ -43,7 +43,7 @@ Before you can build TypeScript OKRA services, you need to install:
 
 ## Development Workflow
 
-1. **Define your service schema** in `service.okra.graphql`:
+1. **Define your service schema** in `service.okra.gql`:
    ```graphql
    @okra(namespace: "myapp.users", version: "v1")
    
@@ -125,13 +125,13 @@ TypeScript Source → ESBuild → JavaScript Bundle → Javy → WASM Module
   "name": "my-service",
   "version": "1.0.0",
   "language": "typescript",
-  "schema": "./service.okra.graphql",
+  "schema": "./service.okra.gql",
   "source": "./src",
   "build": {
     "output": "./build/service.wasm"
   },
   "dev": {
-    "watch": ["*.ts", "**/*.ts", "*.okra.graphql", "**/*.okra.graphql"],
+    "watch": ["*.ts", "**/*.ts", "*.okra.gql", "**/*.okra.gql"],
     "exclude": ["*.test.ts", "build/", "node_modules/", ".git/", "service.interface.ts"]
   }
 }

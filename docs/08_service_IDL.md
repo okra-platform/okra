@@ -36,7 +36,7 @@ There is a top-level built-in directive `@okra` that allows users to specify nam
 
 # OKRA IDL Preprocessing Rules
 
-Before parsing `.okra.graphql` files with a standard GraphQL parser, the OKRA CLI applies a set of preprocessing transforms to support custom syntax extensions. These transforms rewrite non-standard constructs into valid GraphQL types, allowing us to leverage existing parsing tools while preserving semantic intent.
+Before parsing `.okra.gql` files with a standard GraphQL parser, the OKRA CLI applies a set of preprocessing transforms to support custom syntax extensions. These transforms rewrite non-standard constructs into valid GraphQL types, allowing us to leverage existing parsing tools while preserving semantic intent.
 
 see `schema/preprocess.go`
 

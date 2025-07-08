@@ -56,7 +56,7 @@ func LoadConfigFromPath(path string) (*Config, error) {
 		config.Source = "./"
 	}
 	if config.Schema == "" {
-		config.Schema = "./service.okra.graphql"
+		config.Schema = "./service.okra.gql"
 	}
 	if config.Build.Output == "" {
 		config.Build.Output = "./build/service.wasm"
@@ -65,11 +65,11 @@ func LoadConfigFromPath(path string) (*Config, error) {
 		// Set default watch patterns based on language
 		switch config.Language {
 		case "go":
-			config.Dev.Watch = []string{"*.go", "**/*.go", "*.okra.graphql", "**/*.okra.graphql"}
+			config.Dev.Watch = []string{"*.go", "**/*.go", "*.okra.gql", "**/*.okra.gql"}
 		case "typescript":
-			config.Dev.Watch = []string{"*.ts", "**/*.ts", "*.okra.graphql", "**/*.okra.graphql"}
+			config.Dev.Watch = []string{"*.ts", "**/*.ts", "*.okra.gql", "**/*.okra.gql"}
 		default:
-			config.Dev.Watch = []string{"*.okra.graphql", "**/*.okra.graphql"}
+			config.Dev.Watch = []string{"*.okra.gql", "**/*.okra.gql"}
 		}
 	}
 	if len(config.Dev.Exclude) == 0 {

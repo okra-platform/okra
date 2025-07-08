@@ -16,7 +16,7 @@ func NewService() types.Service {
 }
 
 // Example method implementation
-// Replace this with your actual service methods as defined in service.okra.graphql
+// Replace this with your actual service methods as defined in service.okra.gql
 func (s *service) Hello(input *types.HelloInput) (*types.HelloOutput, error) {
 	return &types.HelloOutput{
 		Message: "Hello, " + input.Name + "!",

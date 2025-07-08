@@ -141,7 +141,7 @@ func TestServer_handleFileChange(t *testing.T) {
 
 func TestServer_generateCode(t *testing.T) {
 	tmpDir := t.TempDir()
-	schemaPath := filepath.Join(tmpDir, "service.okra.graphql")
+	schemaPath := filepath.Join(tmpDir, "service.okra.gql")
 	schemaContent := `
 		@okra(namespace: "test", version: "v1")
 		service TestService {

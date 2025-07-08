@@ -1,6 +1,6 @@
 package schema
 
-// Schema is the root of a parsed .okra.graphql file
+// Schema is the root of a parsed .okra.gql file
 type Schema struct {
 	Types    []ObjectType `json:"types"`
 	Enums    []EnumType   `json:"enums"`

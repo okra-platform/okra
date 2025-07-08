@@ -90,3 +90,7 @@ https://raw.githubusercontent.com/tetratelabs/wazero/refs/heads/main/examples/al
 And these build instructions for TinyGo WASI:
 https://raw.githubusercontent.com/tetratelabs/wazero/refs/heads/main/examples/allocation/tinygo/README.md
 
+## Git & Collaboration Guidelines
+
+### Commit Best Practices
+- Don't add claud as co-author to commits

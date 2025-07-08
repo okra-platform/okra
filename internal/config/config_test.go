@@ -23,7 +23,7 @@ func TestLoadConfigFromPath(t *testing.T) {
 				Name:     "test-service",
 				Version:  "1.0.0",
 				Language: "go",
-				Schema:   "./custom.okra.graphql",
+				Schema:   "./custom.okra.gql",
 				Source:   "./src",
 				Build: BuildConfig{
 					Output: "./dist/service.wasm",
@@ -86,7 +86,7 @@ func TestLoadConfigFromPath(t *testing.T) {
 				assert.Equal(t, "./", got.Source)
 			}
 			if tt.config.Schema == "" {
-				assert.Equal(t, "./service.okra.graphql", got.Schema)
+				assert.Equal(t, "./service.okra.gql", got.Schema)
 			}
 			if tt.config.Build.Output == "" {
 				assert.Equal(t, "./build/service.wasm", got.Build.Output)
@@ -97,10 +97,10 @@ func TestLoadConfigFromPath(t *testing.T) {
 				switch got.Language {
 				case "go":
 					assert.Contains(t, got.Dev.Watch, "*.go")
-					assert.Contains(t, got.Dev.Watch, "*.okra.graphql")
+					assert.Contains(t, got.Dev.Watch, "*.okra.gql")
 				case "typescript":
 					assert.Contains(t, got.Dev.Watch, "*.ts")
-					assert.Contains(t, got.Dev.Watch, "*.okra.graphql")
+					assert.Contains(t, got.Dev.Watch, "*.okra.gql")
 				}
 			}
 			

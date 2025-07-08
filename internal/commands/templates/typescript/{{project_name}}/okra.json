@@ -2,13 +2,13 @@
   "name": "{{project_name}}",
   "version": "1.0.0",
   "language": "typescript",
-  "schema": "./service.okra.graphql",
+  "schema": "./service.okra.gql",
   "source": "./src",
   "build": {
     "output": "./build/service.wasm"
   },
   "dev": {
-    "watch": ["*.ts", "**/*.ts", "*.okra.graphql", "**/*.okra.graphql"],
+    "watch": ["*.ts", "**/*.ts", "*.okra.gql", "**/*.okra.gql"],
     "exclude": ["*.test.ts", "build/", "node_modules/", ".git/", "service.interface.ts"]
   }
 }
