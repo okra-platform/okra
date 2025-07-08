@@ -18,8 +18,9 @@ type AdminServer interface {
 
 // adminServer is the internal implementation of AdminServer
 type adminServer struct {
-	runtime runtime.Runtime
-	gateway runtime.ConnectGateway
+	runtime        runtime.Runtime
+	connectGateway runtime.ConnectGateway
+	graphqlGateway runtime.GraphQLGateway
 	
 	// Track deployed services and their sources
 	deployedServices map[string]*DeployedService
@@ -59,10 +60,11 @@ type ErrorResponse struct {
 }
 
 // NewAdminServer creates a new admin server
-func NewAdminServer(runtime runtime.Runtime, gateway runtime.ConnectGateway) AdminServer {
+func NewAdminServer(runtime runtime.Runtime, connectGateway runtime.ConnectGateway, graphqlGateway runtime.GraphQLGateway) AdminServer {
 	return &adminServer{
 		runtime:          runtime,
-		gateway:          gateway,
+		connectGateway:   connectGateway,
+		graphqlGateway:   graphqlGateway,
 		deployedServices: make(map[string]*DeployedService),
 	}
 }
@@ -258,18 +260,29 @@ func (s *adminServer) deployPackage(ctx context.Context, source string, override
 				fmt.Printf("Warning: failed to get actor PID for service %s (actor ID: %s)\n", pkg.ServiceName, actorID)
 			} else {
 			fmt.Printf("Debug: Got actor PID for service %s\n", pkg.ServiceName)
-			if err := s.gateway.UpdateService(ctx, pkg.ServiceName, pkg.FileDescriptors, actorPID); err != nil {
+			if err := s.connectGateway.UpdateService(ctx, pkg.ServiceName, pkg.FileDescriptors, actorPID); err != nil {
 				// Log error but don't fail deployment
 				fmt.Printf("Warning: failed to update gateway with service: %v\n", err)
 			} else {
 				fmt.Printf("✅ Service %s deployed and exposed via ConnectRPC\n", pkg.ServiceName)
-				// Generate endpoint URLs based on service methods
+				// Generate ConnectRPC endpoint URLs
 				for methodName := range pkg.Methods {
-					endpoint := fmt.Sprintf("/%s.%s/%s", 
+					endpoint := fmt.Sprintf("/connect/%s.%s/%s", 
 						pkg.Schema.Meta.Namespace, 
 						pkg.ServiceName, 
 						methodName)
 					endpoints = append(endpoints, endpoint)
+				}
+				
+				// Update GraphQL gateway
+				namespace := pkg.Schema.Meta.Namespace
+				if namespace == "" {
+					namespace = "default"
+				}
+				if err := s.graphqlGateway.UpdateService(ctx, namespace, pkg.Schema, actorPID); err != nil {
+					fmt.Printf("Warning: failed to update GraphQL gateway: %v\n", err)
+				} else {
+					fmt.Printf("✅ Service %s also exposed via GraphQL at /graphql/%s\n", pkg.ServiceName, namespace)
 				}
 			}
 		}

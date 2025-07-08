@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,7 +55,17 @@ type serviceHandler struct {
 }
 
 func (g *connectGateway) Handler() http.Handler {
-	return g.mux
+	// Wrap the mux to handle /connect prefix
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Strip /connect prefix if present
+		if strings.HasPrefix(r.URL.Path, "/connect") {
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, "/connect")
+			if r.URL.Path == "" {
+				r.URL.Path = "/"
+			}
+		}
+		g.mux.ServeHTTP(w, r)
+	})
 }
 
 func (g *connectGateway) UpdateService(ctx context.Context, serviceName string, fds *descriptorpb.FileDescriptorSet, actorPID *actors.PID) error {

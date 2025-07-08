@@ -29,9 +29,10 @@ type Server struct {
 	logger      zerolog.Logger
 	
 	// Runtime components
-	runtime    runtime.Runtime
-	gateway    runtime.ConnectGateway
-	httpServer *http.Server
+	runtime        runtime.Runtime
+	connectGateway runtime.ConnectGateway
+	graphqlGateway runtime.GraphQLGateway
+	httpServer     *http.Server
 	
 	// Current deployment state
 	currentActorID   string
@@ -81,8 +82,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	fmt.Println("🚀 Runtime started successfully")
 	
-	// Initialize ConnectGateway
-	s.gateway = runtime.NewConnectGateway()
+	// Initialize gateways
+	s.connectGateway = runtime.NewConnectGateway()
+	s.graphqlGateway = runtime.NewGraphQLGateway()
 	
 	// Start HTTP server
 	if err := s.startHTTPServer(ctx); err != nil {
@@ -209,10 +211,16 @@ func (s *Server) Stop(ctx context.Context) error {
 		}
 	}
 	
-	// Shutdown gateway
-	if s.gateway != nil {
-		if err := s.gateway.Shutdown(ctx); err != nil {
-			fmt.Printf("⚠️  Warning: failed to shutdown gateway: %v\n", err)
+	// Shutdown gateways
+	if s.connectGateway != nil {
+		if err := s.connectGateway.Shutdown(ctx); err != nil {
+			fmt.Printf("⚠️  Warning: failed to shutdown ConnectRPC gateway: %v\n", err)
+		}
+	}
+	
+	if s.graphqlGateway != nil {
+		if err := s.graphqlGateway.Shutdown(ctx); err != nil {
+			fmt.Printf("⚠️  Warning: failed to shutdown GraphQL gateway: %v\n", err)
 		}
 	}
 	
@@ -383,10 +391,14 @@ func (s *Server) startHTTPServer(ctx context.Context) error {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	
-	// Create HTTP server
+	// Create HTTP server with both gateways
+	mux := http.NewServeMux()
+	mux.Handle("/connect/", s.connectGateway.Handler())
+	mux.Handle("/graphql/", s.graphqlGateway.Handler())
+	
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: s.gateway.Handler(),
+		Handler: mux,
 	}
 	
 	// Start server in background
@@ -506,10 +518,29 @@ func (s *Server) deployServicePackage() error {
 			Str("actorID", actorID).
 			Msg("updating gateway with service")
 		
-		if err := s.gateway.UpdateService(ctx, serviceName, pkg.FileDescriptors, actorPID); err != nil {
-			return fmt.Errorf("failed to update gateway: %w", err)
+		if err := s.connectGateway.UpdateService(ctx, serviceName, pkg.FileDescriptors, actorPID); err != nil {
+			return fmt.Errorf("failed to update ConnectRPC gateway: %w", err)
 		}
-		fmt.Printf("🚀 Service %s deployed and exposed via ConnectRPC\n", serviceName)
+		
+		// Update GraphQL gateway
+		namespace := pkg.Schema.Meta.Namespace
+		if namespace == "" {
+			namespace = "default"
+		}
+		if err := s.graphqlGateway.UpdateService(ctx, namespace, pkg.Schema, actorPID); err != nil {
+			s.logger.Warn().Err(err).Msg("failed to update GraphQL gateway")
+		}
+		
+		fmt.Printf("🚀 Service %s deployed and exposed via:\n", serviceName)
+		fmt.Printf("   - ConnectRPC: /connect/%s.%s/*\n", namespace, serviceName)
+		fmt.Printf("   - GraphQL: /graphql/%s\n", namespace)
+		
+		// Extract port from server address
+		port := s.httpServer.Addr
+		if strings.HasPrefix(port, ":") {
+			port = port[1:]
+		}
+		fmt.Printf("   - GraphQL Playground: http://localhost:%s/graphql/%s (open in browser)\n", port, namespace)
 	} else {
 		fmt.Printf("⚠️  Service %s deployed without FileDescriptors - no ConnectRPC endpoint\n", serviceName)
 		s.logger.Warn().

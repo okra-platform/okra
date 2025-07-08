@@ -353,7 +353,8 @@ func TestServer_RuntimeComponents(t *testing.T) {
 	server := NewServer(cfg, "/test/project")
 	assert.NotNil(t, server)
 	assert.Nil(t, server.runtime) // Should be nil before Start
-	assert.Nil(t, server.gateway) // Should be nil before Start
+	assert.Nil(t, server.connectGateway) // Should be nil before Start
+	assert.Nil(t, server.graphqlGateway) // Should be nil before Start
 	assert.Nil(t, server.httpServer) // Should be nil before Start
 }
 

@@ -2,36 +2,48 @@
 
 ## Overview
 
-The `okra serve` command runs a production-ready OKRA runtime server that hosts WebAssembly services with automatic HTTP/gRPC gateway exposure via ConnectRPC. It provides a REST admin API for dynamic service deployment and management.
+The `okra serve` command runs a production-ready OKRA runtime server that hosts WebAssembly services with automatic HTTP/gRPC gateway exposure via both ConnectRPC and GraphQL protocols. It provides a REST admin API for dynamic service deployment and management.
 
 ## Architecture
 
 ```
-┌─────────────────────┐     ┌─────────────────────┐
-│   Service Gateway   │     │     Admin API       │
-│   (Port 8080)       │     │    (Port 8081)      │
-└──────────┬──────────┘     └──────────┬──────────┘
-           │                           │
-           │                           │
-      ┌────▼──────────┐                │
-      │  ConnectRPC   │                │
-      │   Gateway     │                │
-      │  (Dynamic     │                │
-      │   Routing)    │                │
-      └────┬──────────┘                │
-           │                           │
-           │      ┌────────────────────▼────┐
-           └─────►│     OKRA Runtime        │
-                  │  (Actor System + WASM)  │
-                  └─────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│            Service Gateway (Port 8080)          │
+│                                                 │
+│  ┌─────────────────┐     ┌──────────────────┐  │
+│  │   /connect/*    │     │   /graphql/*     │  │     ┌─────────────────────┐
+│  │                 │     │                  │  │     │     Admin API       │
+│  │  ConnectRPC     │     │    GraphQL       │  │     │    (Port 8081)      │
+│  │   Gateway       │     │    Gateway       │  │     └──────────┬──────────┘
+│  │                 │     │                  │  │                │
+│  └────────┬────────┘     └────────┬─────────┘  │                │
+│           │                       │             │                │
+└───────────┼───────────────────────┼─────────────┘                │
+            │                       │                              │
+            │                       │                              │
+            │      ┌────────────────▼──────────────────────────────▼──┐
+            └─────►│              OKRA Runtime                        │
+                   │         (Actor System + WASM)                    │
+                   │                                                  │
+                   │  ┌────────────┐  ┌────────────┐  ┌────────────┐ │
+                   │  │  Service    │  │  Service    │  │  Service    │ │
+                   │  │  Actor 1    │  │  Actor 2    │  │  Actor N    │ │
+                   │  └────────────┘  └────────────┘  └────────────┘ │
+                   └──────────────────────────────────────────────────┘
 ```
 
 ### Components
 
-1. **Service Gateway (Port 8080)**: Exposes deployed services via ConnectRPC protocol
-   - Supports both JSON and Protobuf encoding
-   - Dynamic route registration based on service descriptors
-   - Automatic protocol translation between HTTP and actor messages
+1. **Service Gateway (Port 8080)**: Exposes deployed services via multiple protocols
+   - **ConnectRPC Gateway** (`/connect/*`): 
+     - Supports both JSON and Protobuf encoding
+     - Dynamic route registration based on service descriptors
+     - Full gRPC-Web compatibility
+   - **GraphQL Gateway** (`/graphql/*`):
+     - Namespace-based routing (`/graphql/{namespace}`)
+     - Full introspection support
+     - Automatic query/mutation classification
+     - Type-safe schema generation from OKRA schemas
 
 2. **Admin API (Port 8081)**: REST API for service management
    - Deploy services from packages
@@ -108,10 +120,12 @@ Response:
   "service_id": "namespace.ServiceName.v1",
   "status": "deployed",
   "endpoints": [
-    "/namespace.ServiceName/methodName"
+    "/connect/namespace.ServiceName/methodName"
   ]
 }
 ```
+
+Note: Services are also automatically exposed via GraphQL at `/graphql/{namespace}`
 
 ### List Services
 
@@ -167,27 +181,55 @@ The server validates packages before deployment:
 
 ## Service Invocation
 
-Once deployed, services are accessible via the service gateway using ConnectRPC protocol.
+Once deployed, services are accessible via the service gateway using either ConnectRPC or GraphQL protocols.
 
-### JSON Request Example
+### ConnectRPC (JSON) Request Example
 
 ```bash
-curl -X POST http://localhost:8080/namespace.ServiceName/methodName \
+curl -X POST http://localhost:8080/connect/namespace.ServiceName/methodName \
   -H "Content-Type: application/json" \
   -d '{"field": "value"}'
 ```
 
-### Endpoint Format
+### GraphQL Request Example
 
-Service endpoints follow the pattern:
+```bash
+curl -X POST http://localhost:8080/graphql/namespace \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation { methodName(input: { field: \"value\" }) { result } }"
+  }'
 ```
-/{namespace}.{ServiceName}/{methodName}
+
+### Endpoint Formats
+
+**ConnectRPC endpoints**:
+```
+/connect/{namespace}.{ServiceName}/{methodName}
+```
+
+**GraphQL endpoints**:
+```
+/graphql/{namespace}
 ```
 
 Where:
 - `namespace`: From the `@okra(namespace: "...")` directive in the schema
 - `ServiceName`: The service name from the schema
 - `methodName`: The RPC method name
+
+### GraphQL Introspection
+
+The GraphQL gateway supports full introspection:
+
+```bash
+# Query available types
+curl -X POST http://localhost:8080/graphql/namespace \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "{ __schema { types { name kind } } }"
+  }'
+```
 
 ## Implementation Details
 
@@ -252,10 +294,21 @@ The server handles shutdown signals (SIGINT, SIGTERM) gracefully:
    ```
 
 3. Call your service:
+   
+   **Via ConnectRPC**:
    ```bash
-   curl -X POST http://localhost:8080/myapp.MyService/greet \
+   curl -X POST http://localhost:8080/connect/myapp.MyService/greet \
      -H "Content-Type: application/json" \
      -d '{"name": "World"}'
+   ```
+   
+   **Via GraphQL**:
+   ```bash
+   curl -X POST http://localhost:8080/graphql/myapp \
+     -H "Content-Type: application/json" \
+     -d '{
+       "query": "mutation { greet(input: { name: \"World\" }) { message } }"
+     }'
    ```
 
 4. Check deployment status:
@@ -273,8 +326,11 @@ The server handles shutdown signals (SIGINT, SIGTERM) gracefully:
 | Package deployment | No | Yes |
 | Admin API | No | Yes |
 | GraphQL playground | Yes | No |
+| GraphQL introspection | Yes | Yes |
 | File watching | Yes | No |
 | Multiple services | No | Yes |
+| ConnectRPC support | Yes | Yes |
+| GraphQL support | Yes | Yes |
 
 ## Troubleshooting
 
@@ -282,7 +338,9 @@ The server handles shutdown signals (SIGINT, SIGTERM) gracefully:
 
 - Check the namespace in your schema `@okra(namespace: "...")`
 - Verify the service was deployed successfully
-- Ensure the endpoint URL matches the pattern `/{namespace}.{ServiceName}/{methodName}`
+- For ConnectRPC: Ensure the endpoint URL matches `/connect/{namespace}.{ServiceName}/{methodName}`
+- For GraphQL: Ensure the endpoint URL matches `/graphql/{namespace}`
+- Note that the path prefixes (`/connect/` and `/graphql/`) are required
 
 ### Deployment Fails
 

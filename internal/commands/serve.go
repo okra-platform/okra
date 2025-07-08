@@ -59,11 +59,12 @@ func (c *Controller) Serve(ctx context.Context, opts ...ServeOptions) error {
 		}
 	}()
 
-	// Create gateway for service exposure
-	gateway := runtime.NewConnectGateway()
+	// Create gateways for service exposure
+	connectGateway := runtime.NewConnectGateway()
+	graphqlGateway := runtime.NewGraphQLGateway()
 
 	// Create admin server
-	adminServer := serve.NewAdminServer(okraRuntime, gateway)
+	adminServer := serve.NewAdminServer(okraRuntime, connectGateway, graphqlGateway)
 
 	// Start both servers
 	var wg sync.WaitGroup
@@ -75,10 +76,14 @@ func (c *Controller) Serve(ctx context.Context, opts ...ServeOptions) error {
 		defer wg.Done()
 		fmt.Printf("Starting service gateway on port %d...\n", servicePort)
 		
-		// Create HTTP server for gateway
+		// Create HTTP server for both gateways
+		mux := http.NewServeMux()
+		mux.Handle("/connect/", connectGateway.Handler())
+		mux.Handle("/graphql/", graphqlGateway.Handler())
+		
 		gatewayServer := &http.Server{
 			Addr:    fmt.Sprintf(":%d", servicePort),
-			Handler: gateway.Handler(),
+			Handler: mux,
 		}
 		
 		if err := gatewayServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

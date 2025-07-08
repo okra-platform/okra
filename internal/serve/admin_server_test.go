@@ -31,7 +31,7 @@ func TestNewAdminServer(t *testing.T) {
 func TestAdminServer_HandleHealth(t *testing.T) {
 	// Test: Health endpoint returns healthy status
 	
-	server := &AdminServer{
+	server := &adminServer{
 		deployedServices: make(map[string]*DeployedService),
 	}
 	
@@ -60,7 +60,7 @@ func TestAdminServer_HandleDeploy_Success(t *testing.T) {
 func TestAdminServer_HandleDeploy_InvalidRequest(t *testing.T) {
 	// Test: Deploy endpoint rejects invalid requests
 	
-	server := &AdminServer{
+	server := &adminServer{
 		deployedServices: make(map[string]*DeployedService),
 	}
 	
@@ -98,7 +98,7 @@ func TestAdminServer_HandleDeploy_InvalidRequest(t *testing.T) {
 func TestAdminServer_HandleListServices(t *testing.T) {
 	// Test: List services returns all deployed services
 	
-	server := &AdminServer{
+	server := &adminServer{
 		deployedServices: map[string]*DeployedService{
 			"test.Service1.v1": {
 				ID:         "test.Service1.v1",
@@ -137,7 +137,7 @@ func TestAdminServer_HandleUndeploy_Success(t *testing.T) {
 func TestAdminServer_HandleUndeploy_NotFound(t *testing.T) {
 	// Test: Undeploy returns 404 for non-existent service
 	
-	server := &AdminServer{
+	server := &adminServer{
 		deployedServices: make(map[string]*DeployedService),
 	}
 	
