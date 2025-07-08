@@ -200,11 +200,21 @@ func TestGoBuilder_generateWrapper(t *testing.T) {
 func TestGoBuilder_createTempGoMod(t *testing.T) {
 	// Test: Create temp go.mod with correct replace directive
 	t.Run("create go.mod", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		projectRoot := "/path/to/project"
+		// Create a temporary project directory with a go.mod file
+		projectRoot := t.TempDir()
+		userGoModContent := `module github.com/test/myapp
+
+go 1.22
+
+require (
+	github.com/some/dependency v1.0.0
+)`
+		err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte(userGoModContent), 0644)
+		require.NoError(t, err)
 		
+		tmpDir := t.TempDir()
 		builder := &GoBuilder{projectRoot: projectRoot}
-		err := builder.createTempGoMod(tmpDir, "github.com/test/myapp")
+		err = builder.createTempGoMod(tmpDir, "github.com/test/myapp")
 		require.NoError(t, err)
 
 		goModPath := filepath.Join(tmpDir, "go.mod")
@@ -215,7 +225,7 @@ func TestGoBuilder_createTempGoMod(t *testing.T) {
 		
 		contentStr := string(content)
 		assert.Contains(t, contentStr, "module okra-temp-build")
-		assert.Contains(t, contentStr, "go 1.21")
+		assert.Contains(t, contentStr, "go 1.22") // Should use version from user's go.mod
 		assert.Contains(t, contentStr, "require github.com/test/myapp v0.0.0")
 		assert.Contains(t, contentStr, "replace github.com/test/myapp => "+projectRoot)
 	})
