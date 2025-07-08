@@ -89,6 +89,13 @@ func main() {
 					return ctrl.Deploy(ctx)
 				},
 			},
+			{
+				Name:  "serve",
+				Usage: "Start OKRA runtime server with admin API",
+				Action: func(ctx context.Context, c *cli.Command) error {
+					return ctrl.Serve(ctx)
+				},
+			},
 		},
 	}
 

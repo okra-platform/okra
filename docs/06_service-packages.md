@@ -6,11 +6,12 @@ An OKRA service package is a compiled bundle that contains everything needed to 
 
 ## 📦 Package Contents
 
-Each `.pkg` file includes:
+Each `.pkg` file is a **tar.gz archive** containing:
 
 - `service.wasm` – Compiled WASM binary exposing `handle_request`
 - `service.description.json` – JSON description of the parsed GraphQL IDL for validation and code generation
-- `okra.service.json` – Describes supported methods, required host APIs, configuration, etc.
+- `okra.json` – config info for the service
+- `service.pb.desc` – Protobuf file descriptor set for external service exposure via ConnectRPC gateway
 
 Packages are versioned and uploaded to object storage (e.g., S3, R2, GCS).
 

@@ -62,16 +62,27 @@ Each deployed module contains:
 - okra.service.json: manifest and configuration file that describes the service
 
 ## Related Docs
-- 01_system-diagrams.md – High-level system and flow diagrams
-- 02_actor-messaging.md – Message routing with GoAKT and mapping to Services
-- 03_exposed-services.md – Details of how services are exposed to the outside via ConnectRPC / gRPC
-- 04_service-to-service.md - Details of how service-to-service communication is built on top of GoAKT
-- 05_wasm-actors.md – WASMActor and WASMSingletonActor details & worker pool
-- 06_service-packages.md – The generated code and built artifacts that live in an okra package
-- 07_host-apis.md - How Host APIs are injected into the services
 
-- 100_coding-conventions.md - Coding conventions and best-practices for this repo 
-- 101_testing-strategy.md - Testing philosophy, strategy and conventions
-- 102_testing-best-practices.md - Best practices for approaching testing
+### Architecture & Implementation
+- [01_system-diagrams.md](./01_system-diagrams.md) – High-level system and flow diagrams
+- [02_actor-messaging.md](./02_actor-messaging.md) – Message routing with GoAKT and mapping to Services
+- [03_exposed-services.md](./03_exposed-services.md) – Details of how services are exposed to the outside via ConnectRPC / gRPC
+- [04_service-to-service.md](./04_service-to-service.md) – Details of how service-to-service communication is built on top of GoAKT
+- [05_wasm_actors.md](./05_wasm_actors.md) – WASMActor and WASMSingletonActor details & worker pool
+
+### Service Development
+- [06_service-packages.md](./06_service-packages.md) – The generated code and built artifacts that live in an okra package
+- [07_host-apis.md](./07_host-apis.md) – How Host APIs are injected into the services
+- [08_service_IDL.md](./08_service_IDL.md) – Service Interface Definition Language (GraphQL schema) documentation
+- [09_typescript_setup.md](./09_typescript_setup.md) – TypeScript service development setup and guidelines
+- [10_development-debugging.md](./10_development-debugging.md) – Development and debugging guide for OKRA services
+
+### Operations
+- [11_okra-serve.md](./11_okra-serve.md) – Production runtime server documentation (okra serve command)
+
+### Development Guidelines
+- [100_coding-conventions.md](./100_coding-conventions.md) – Coding conventions and best-practices for this repo 
+- [101_testing-strategy.md](./101_testing-strategy.md) – Testing philosophy, strategy and conventions
+- [102_testing-best-practices.md](./102_testing-best-practices.md) – Best practices for approaching testing
 
 

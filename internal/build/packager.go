@@ -13,36 +13,7 @@ import (
 	"github.com/okra-platform/okra/internal/config"
 )
 
-// ServiceMetadata contains metadata about the service for okra.service.json
-type ServiceMetadata struct {
-	// Name of the service
-	Name string `json:"name"`
-	
-	// Version of the service
-	Version string `json:"version"`
-	
-	// Language the service was written in
-	Language string `json:"language"`
-	
-	// Namespace from the schema
-	Namespace string `json:"namespace"`
-	
-	// Methods supported by the service
-	Methods []MethodInfo `json:"methods"`
-	
-	// BuildInfo contains build metadata
-	BuildInfo BuildInfo `json:"buildInfo"`
-	
-	// RequiredHostAPIs lists any host APIs this service requires
-	RequiredHostAPIs []string `json:"requiredHostAPIs,omitempty"`
-}
-
-// MethodInfo contains information about a service method
-type MethodInfo struct {
-	Name       string `json:"name"`
-	InputType  string `json:"inputType"`
-	OutputType string `json:"outputType"`
-}
+// Packager creates .pkg files from build artifacts
 
 // Packager creates .pkg files from build artifacts
 type Packager struct {
@@ -94,14 +65,13 @@ func (p *Packager) CreatePackage(artifacts *BuildArtifacts, outputPath string) e
 		return fmt.Errorf("failed to add schema to package: %w", err)
 	}
 	
-	// Create and add okra.service.json
-	metadata := p.createServiceMetadata(artifacts)
-	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
+	// Create and add okra.json (the original config file)
+	configJSON, err := json.MarshalIndent(p.config, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	if err := p.addDataToTar(tarWriter, metadataJSON, "okra.service.json"); err != nil {
-		return fmt.Errorf("failed to add metadata to package: %w", err)
+	if err := p.addDataToTar(tarWriter, configJSON, "okra.json"); err != nil {
+		return fmt.Errorf("failed to add config to package: %w", err)
 	}
 	
 	// Add protobuf descriptor if available
@@ -112,39 +82,6 @@ func (p *Packager) CreatePackage(artifacts *BuildArtifacts, outputPath string) e
 	}
 	
 	return nil
-}
-
-// createServiceMetadata creates service metadata from artifacts
-func (p *Packager) createServiceMetadata(artifacts *BuildArtifacts) *ServiceMetadata {
-	// Extract methods from schema
-	var methods []MethodInfo
-	if len(artifacts.Schema.Services) > 0 {
-		service := artifacts.Schema.Services[0]
-		for _, method := range service.Methods {
-			methods = append(methods, MethodInfo{
-				Name:       method.Name,
-				InputType:  method.InputType,
-				OutputType: method.OutputType,
-			})
-		}
-	}
-	
-	// Get namespace
-	namespace := artifacts.Schema.Meta.Namespace
-	if namespace == "" {
-		namespace = "default"
-	}
-	
-	return &ServiceMetadata{
-		Name:      p.config.Name,
-		Version:   p.config.Version,
-		Language:  p.config.Language,
-		Namespace: namespace,
-		Methods:   methods,
-		BuildInfo: artifacts.BuildInfo,
-		// TODO: Extract required host APIs from schema directives
-		RequiredHostAPIs: []string{},
-	}
 }
 
 // addFileToTar adds a file to the tar archive

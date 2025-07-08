@@ -105,61 +105,9 @@ func TestPackager_CreatePackage(t *testing.T) {
 	verifyPackageContents(t, packagePath, []string{
 		"service.wasm",
 		"service.description.json",
-		"okra.service.json",
+		"okra.json",
 		"service.pb.desc",
 	})
-}
-
-func TestCreateServiceMetadata(t *testing.T) {
-	// Test: createServiceMetadata generates correct metadata
-	
-	cfg := &config.Config{
-		Name:     "test-service",
-		Version:  "2.0.0",
-		Language: "typescript",
-	}
-	
-	artifacts := &BuildArtifacts{
-		Schema: &schema.Schema{
-			Meta: schema.Metadata{
-				Namespace: "myapp",
-				Version:   "v2",
-			},
-			Services: []schema.Service{
-				{
-					Name: "GreeterService",
-					Methods: []schema.Method{
-						{
-							Name:       "greet",
-							InputType:  "GreetRequest",
-							OutputType: "GreetResponse",
-						},
-						{
-							Name:       "farewell",
-							InputType:  "FarewellRequest",
-							OutputType: "FarewellResponse",
-						},
-					},
-				},
-			},
-		},
-		BuildInfo: BuildInfo{
-			Timestamp: time.Now(),
-			Version:   "2.0.0",
-			Language:  "typescript",
-		},
-	}
-	
-	packager := NewPackager(cfg)
-	metadata := packager.createServiceMetadata(artifacts)
-	
-	assert.Equal(t, "test-service", metadata.Name)
-	assert.Equal(t, "2.0.0", metadata.Version)
-	assert.Equal(t, "typescript", metadata.Language)
-	assert.Equal(t, "myapp", metadata.Namespace)
-	assert.Len(t, metadata.Methods, 2)
-	assert.Equal(t, "greet", metadata.Methods[0].Name)
-	assert.Equal(t, "farewell", metadata.Methods[1].Name)
 }
 
 // verifyPackageContents extracts and verifies the contents of a package

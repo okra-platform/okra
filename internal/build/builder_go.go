@@ -76,6 +76,7 @@ func (b *ServiceBuilder) generateProtobufDescriptor(parsedSchema *schema.Schema)
 	if namespace == "" {
 		namespace = "service"
 	}
+	fmt.Printf("Debug: Generating protobuf with namespace: '%s' (from schema: '%s')\n", namespace, parsedSchema.Meta.Namespace)
 	b.logger.Debug().
 		Str("namespace", namespace).
 		Msg("generating protobuf with namespace")

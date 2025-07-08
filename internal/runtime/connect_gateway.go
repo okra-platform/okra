@@ -104,6 +104,7 @@ func (g *connectGateway) UpdateService(ctx context.Context, serviceName string, 
 	// Register the handler with the mux
 	// ConnectRPC uses the pattern /package.Service/Method
 	pattern := fmt.Sprintf("/%s.%s/", serviceDesc.ParentFile().Package(), serviceName)
+	fmt.Printf("ConnectGateway: Registering service handler for pattern: %s\n", pattern)
 	g.mux.Handle(pattern, handler)
 	
 	return nil

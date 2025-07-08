@@ -120,9 +120,9 @@ func TestGenerator_Services(t *testing.T) {
 	assert.Contains(t, result, "// UserService manages user operations")
 	assert.Contains(t, result, "type UserService interface {")
 	assert.Contains(t, result, "// GetUser retrieves a user by ID")
-	assert.Contains(t, result, "GetUser(input GetUserRequest) (User, error)")
+	assert.Contains(t, result, "GetUser(input *GetUserRequest) (*User, error)")
 	assert.Contains(t, result, "// CreateUser creates a new user")
-	assert.Contains(t, result, "CreateUser(input CreateUserRequest) (CreateUserResponse, error)")
+	assert.Contains(t, result, "CreateUser(input *CreateUserRequest) (*CreateUserResponse, error)")
 }
 
 func TestGenerator_ArrayTypes(t *testing.T) {
@@ -289,7 +289,7 @@ func TestGenerator_CompleteExample(t *testing.T) {
 	
 	// Check service
 	assert.Contains(t, result, "type UserService interface")
-	assert.Contains(t, result, "GetUser(input GetUserRequest) (User, error)")
+	assert.Contains(t, result, "GetUser(input *GetUserRequest) (*User, error)")
 }
 
 
