@@ -93,4 +93,4 @@ https://raw.githubusercontent.com/tetratelabs/wazero/refs/heads/main/examples/al
 ## Git & Collaboration Guidelines
 
 ### Commit Best Practices
-- Don't add claud as co-author to commits
+IMPORTANT: - Never add claude user as a co-author to commits

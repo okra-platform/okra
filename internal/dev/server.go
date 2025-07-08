@@ -3,6 +3,8 @@ package dev
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +18,10 @@ import (
 	"github.com/okra-platform/okra/internal/codegen/protobuf"
 	"github.com/okra-platform/okra/internal/codegen/typescript"
 	"github.com/okra-platform/okra/internal/config"
+	"github.com/okra-platform/okra/internal/runtime"
 	"github.com/okra-platform/okra/internal/schema"
+	"github.com/okra-platform/okra/internal/wasm"
+	"github.com/rs/zerolog"
 )
 
 // Server represents the development server
@@ -24,6 +29,15 @@ type Server struct {
 	config      *config.Config
 	projectRoot string
 	watcher     *FileWatcher
+	
+	// Runtime components
+	runtime    runtime.Runtime
+	gateway    runtime.ConnectGateway
+	httpServer *http.Server
+	
+	// Current deployment state
+	currentServiceName string
+	currentServiceMu   sync.RWMutex
 	
 	// Mutex to prevent concurrent builds
 	buildMutex sync.Mutex
@@ -40,6 +54,22 @@ func NewServer(cfg *config.Config, projectRoot string) *Server {
 
 // Start runs the development server
 func (s *Server) Start(ctx context.Context) error {
+	// Initialize runtime with a logger
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	s.runtime = runtime.NewOkraRuntime(logger)
+	if err := s.runtime.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start runtime: %w", err)
+	}
+	fmt.Println("🚀 Runtime started successfully")
+	
+	// Initialize ConnectGateway
+	s.gateway = runtime.NewConnectGateway()
+	
+	// Start HTTP server
+	if err := s.startHTTPServer(ctx); err != nil {
+		return fmt.Errorf("failed to start HTTP server: %w", err)
+	}
+	
 	// Run initial build
 	if err := s.buildAll(); err != nil {
 		return fmt.Errorf("initial build failed: %w", err)
@@ -67,6 +97,35 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Start watching
 	return s.watcher.Start(ctx)
+}
+
+// Stop gracefully shuts down the development server
+func (s *Server) Stop(ctx context.Context) error {
+	fmt.Println("\n🛑 Shutting down development server...")
+	
+	// Stop HTTP server
+	if s.httpServer != nil {
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			fmt.Printf("⚠️  Warning: failed to shutdown HTTP server: %v\n", err)
+		}
+	}
+	
+	// Shutdown gateway
+	if s.gateway != nil {
+		if err := s.gateway.Shutdown(ctx); err != nil {
+			fmt.Printf("⚠️  Warning: failed to shutdown gateway: %v\n", err)
+		}
+	}
+	
+	// Shutdown runtime
+	if s.runtime != nil {
+		if err := s.runtime.Shutdown(ctx); err != nil {
+			fmt.Printf("⚠️  Warning: failed to shutdown runtime: %v\n", err)
+		}
+	}
+	
+	fmt.Println("✅ Development server stopped")
+	return nil
 }
 
 // handleFileChange is called when a watched file changes
@@ -172,6 +231,12 @@ func (s *Server) handleSourceChange(path string) {
 		fmt.Printf("❌ WASM build failed: %v\n", err)
 		return
 	}
+	
+	// Deploy the service package
+	if err := s.deployServicePackage(); err != nil {
+		fmt.Printf("❌ Service deployment failed: %v\n", err)
+		return
+	}
 
 	fmt.Println("✅ Build completed successfully!")
 }
@@ -191,7 +256,134 @@ func (s *Server) buildAll() error {
 		return fmt.Errorf("WASM build failed: %w", err)
 	}
 
+	// Deploy the service package
+	if err := s.deployServicePackage(); err != nil {
+		return fmt.Errorf("failed to deploy service package: %w", err)
+	}
+	
 	fmt.Println("✅ Initial build completed successfully!")
+	return nil
+}
+
+// startHTTPServer starts the HTTP server for the ConnectGateway
+func (s *Server) startHTTPServer(ctx context.Context) error {
+	// Find an available port
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return fmt.Errorf("failed to find available port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+	
+	// Create HTTP server
+	s.httpServer = &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: s.gateway.Handler(),
+	}
+	
+	// Start server in background
+	go func() {
+		fmt.Printf("🌐 HTTP server listening on http://localhost:%d\n", port)
+		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("❌ HTTP server error: %v\n", err)
+		}
+	}()
+	
+	return nil
+}
+
+// deployServicePackage loads the built artifacts and deploys to the runtime
+func (s *Server) deployServicePackage() error {
+	ctx := context.Background()
+	
+	// Load schema
+	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
+	schemaContent, err := os.ReadFile(schemaPath)
+	if err != nil {
+		return fmt.Errorf("failed to read schema: %w", err)
+	}
+	
+	parsedSchema, err := schema.ParseSchema(string(schemaContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse schema: %w", err)
+	}
+	
+	if len(parsedSchema.Services) == 0 {
+		return fmt.Errorf("no services defined in schema")
+	}
+	
+	serviceName := parsedSchema.Services[0].Name
+	
+	// Load WASM module
+	wasmPath := filepath.Join(s.projectRoot, s.config.Build.Output)
+	wasmBytes, err := os.ReadFile(wasmPath)
+	if err != nil {
+		return fmt.Errorf("failed to read WASM file: %w", err)
+	}
+	
+	compiledModule, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
+	if err != nil {
+		return fmt.Errorf("failed to compile WASM module: %w", err)
+	}
+	
+	// Create service package
+	pkg, err := runtime.NewServicePackage(compiledModule, parsedSchema, s.config)
+	if err != nil {
+		return fmt.Errorf("failed to create service package: %w", err)
+	}
+	
+	// Load protobuf descriptors if available
+	descPath := filepath.Join(s.projectRoot, ".okra", "service.pb.desc")
+	if _, err := os.Stat(descPath); err == nil {
+		fds, err := runtime.LoadFileDescriptors(descPath)
+		if err != nil {
+			fmt.Printf("⚠️  Warning: failed to load protobuf descriptors: %v\n", err)
+		} else {
+			pkg.WithFileDescriptors(fds)
+			fmt.Println("📦 Loaded protobuf descriptors")
+		}
+	}
+	
+	// Check if service is already deployed
+	s.currentServiceMu.RLock()
+	currentService := s.currentServiceName
+	s.currentServiceMu.RUnlock()
+	
+	// Undeploy existing service if needed
+	if currentService != "" && currentService == serviceName {
+		fmt.Printf("🔄 Redeploying service: %s\n", serviceName)
+		if err := s.runtime.Undeploy(ctx, serviceName); err != nil {
+			fmt.Printf("⚠️  Warning: failed to undeploy existing service: %v\n", err)
+		}
+	}
+	
+	// Deploy the service
+	actorID, err := s.runtime.Deploy(ctx, pkg)
+	if err != nil {
+		return fmt.Errorf("failed to deploy service: %w", err)
+	}
+	
+	// Update current service name
+	s.currentServiceMu.Lock()
+	s.currentServiceName = serviceName
+	s.currentServiceMu.Unlock()
+	
+	// Get the actor PID for the service
+	actorPID := s.runtime.(*runtime.OkraRuntime).GetActorPID(actorID)
+	if actorPID == nil {
+		return fmt.Errorf("failed to get actor PID for service %s", serviceName)
+	}
+	
+	// Update ConnectGateway with the service
+	if pkg.FileDescriptors != nil {
+		if err := s.gateway.UpdateService(ctx, serviceName, pkg.FileDescriptors, actorPID); err != nil {
+			return fmt.Errorf("failed to update gateway: %w", err)
+		}
+		fmt.Printf("🚀 Service %s deployed and exposed via ConnectRPC\n", serviceName)
+	} else {
+		fmt.Printf("🚀 Service %s deployed (no external API)\n", serviceName)
+	}
+	
 	return nil
 }
 

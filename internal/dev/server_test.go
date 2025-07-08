@@ -1,6 +1,8 @@
 package dev
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -8,12 +10,14 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/okra-platform/okra/internal/config"
+	"github.com/okra-platform/okra/internal/runtime"
+	"github.com/okra-platform/okra/internal/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/okra-platform/okra/internal/config"
-	"github.com/okra-platform/okra/internal/schema"
+	"github.com/tochemey/goakt/v2/actors"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 // Mock implementations
@@ -223,4 +227,93 @@ func TestServer_concurrentBuilds(t *testing.T) {
 	// Should have multiple attempts but only one completed build
 	assert.Equal(t, 5, buildAttempts)
 	assert.Equal(t, 1, buildsCompleted, "Only one build should complete when multiple are triggered concurrently")
+}
+
+// Test plan for runtime integration:
+// 1. Test runtime initialization on server start
+// 2. Test ConnectGateway creation
+// 3. Test HTTP server startup
+// 4. Test service deployment after successful build
+// 5. Test protobuf descriptor loading
+// 6. Test graceful shutdown
+
+func TestServer_RuntimeComponents(t *testing.T) {
+	// Test: Server has runtime components after creation
+	cfg := &config.Config{
+		Language: "go",
+		Schema:   "service.okra.gql",
+		Source:   "service.go",
+		Build: config.BuildConfig{
+			Output: "build/service.wasm",
+		},
+		Dev: config.DevConfig{
+			Watch:   []string{"."},
+			Exclude: []string{"build"},
+		},
+	}
+	
+	server := NewServer(cfg, "/test/project")
+	assert.NotNil(t, server)
+	assert.Nil(t, server.runtime) // Should be nil before Start
+	assert.Nil(t, server.gateway) // Should be nil before Start
+	assert.Nil(t, server.httpServer) // Should be nil before Start
+}
+
+func TestServer_Stop(t *testing.T) {
+	// Test: Stop handles nil components gracefully
+	server := &Server{}
+	
+	ctx := context.Background()
+	err := server.Stop(ctx)
+	assert.NoError(t, err)
+}
+
+// MockRuntime for testing
+type mockRuntime struct {
+	mock.Mock
+}
+
+func (m *mockRuntime) Start(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *mockRuntime) Deploy(ctx context.Context, pkg *runtime.ServicePackage) (string, error) {
+	args := m.Called(ctx, pkg)
+	return args.String(0), args.Error(1)
+}
+
+func (m *mockRuntime) Undeploy(ctx context.Context, actorID string) error {
+	args := m.Called(ctx, actorID)
+	return args.Error(0)
+}
+
+func (m *mockRuntime) IsDeployed(actorID string) bool {
+	args := m.Called(actorID)
+	return args.Bool(0)
+}
+
+func (m *mockRuntime) Shutdown(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// MockConnectGateway for testing
+type mockConnectGateway struct {
+	mock.Mock
+}
+
+func (m *mockConnectGateway) Handler() http.Handler {
+	args := m.Called()
+	return args.Get(0).(http.Handler)
+}
+
+func (m *mockConnectGateway) UpdateService(ctx context.Context, serviceName string, fds *descriptorpb.FileDescriptorSet, actorPID *actors.PID) error {
+	args := m.Called(ctx, serviceName, fds, actorPID)
+	return args.Error(0)
+}
+
+func (m *mockConnectGateway) Shutdown(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
 }

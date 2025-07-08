@@ -206,5 +206,16 @@ func (r *OkraRuntime) generateActorID(pkg *ServicePackage) string {
 	return fmt.Sprintf("%s.%s.%s", namespace, pkg.ServiceName, version)
 }
 
+// GetActorPID returns the PID for a given actor ID
+func (o *OkraRuntime) GetActorPID(actorID string) *actors.PID {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	
+	if pid, exists := o.deployedActors[actorID]; exists {
+		return pid
+	}
+	return nil
+}
+
 // Ensure OkraRuntime implements Runtime interface
 var _ Runtime = (*OkraRuntime)(nil)
