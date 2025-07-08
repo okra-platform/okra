@@ -63,3 +63,16 @@ tasks:
         msg: "buf is required but not installed. Visit https://buf.build/docs/installation for installation instructions."
       - sh: command -v protoc-gen-go
         msg: "protoc-gen-go is required but not installed. Run: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"
+
+  test:okra-dev:
+    desc: Run integration test for okra dev command
+    cmds:
+      - echo "Building and installing okra CLI..."
+      - go install .
+      - echo "Running okra dev integration test..."
+      - go test -v -tags=integration -timeout=60s ./test/integration/dev/...
+    preconditions:
+      - sh: command -v tinygo
+        msg: "tinygo is required for building WASM. Visit https://tinygo.org/getting-started/install/ for installation instructions."
+      - sh: command -v buf
+        msg: "buf is required but not installed. Visit https://buf.build/docs/installation for installation instructions."

@@ -1,0 +1,14 @@
+{
+  "name": "test-service",
+  "version": "1.0.0",
+  "language": "go",
+  "schema": "./service.okra.gql",
+  "source": "./service",
+  "build": {
+    "output": "./build/service.wasm"
+  },
+  "dev": {
+    "watch": ["*.go", "**/*.go", "*.okra.gql", "**/*.okra.gql"],
+    "exclude": ["*_test.go", "build/", ".git/", "service.interface.go"]
+  }
+}

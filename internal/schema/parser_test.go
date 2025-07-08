@@ -340,6 +340,47 @@ func TestParseSchema_Errors(t *testing.T) {
 	}
 }
 
+func TestParseSchema_IntegrationTestSchema(t *testing.T) {
+	// Test the exact schema from the integration test that's failing
+	input := `@okra(namespace: "test", version: "v1")
+
+service Service {
+  greet(input: GreetRequest): GreetResponse
+}
+
+type GreetRequest {
+  name: String!
+}
+
+type GreetResponse {
+  message: String!
+  timestamp: String!
+}`
+
+	schema, err := ParseSchema(input)
+	require.NoError(t, err)
+	require.NotNil(t, schema)
+
+	// Test: Check metadata
+	assert.Equal(t, "test", schema.Meta.Namespace)
+	assert.Equal(t, "v1", schema.Meta.Version)
+
+	// Test: Check services
+	assert.Len(t, schema.Services, 1, "Expected 1 service")
+	service := schema.Services[0]
+	assert.Equal(t, "Service", service.Name)
+	assert.Len(t, service.Methods, 1)
+
+	// Test: Check method
+	method := service.Methods[0]
+	assert.Equal(t, "greet", method.Name)
+	assert.Equal(t, "GreetRequest", method.InputType)
+	assert.Equal(t, "GreetResponse", method.OutputType)
+
+	// Test: Check types
+	assert.Len(t, schema.Types, 2)
+}
+
 func TestParseSchema_EmptySchema(t *testing.T) {
 	// Test parsing empty or minimal schemas
 

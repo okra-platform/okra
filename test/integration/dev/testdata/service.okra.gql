@@ -1,0 +1,14 @@
+@okra(namespace: "test", version: "v1")
+
+service Service {
+  greet(input: GreetRequest): GreetResponse
+}
+
+type GreetRequest {
+  name: String!
+}
+
+type GreetResponse {
+  message: String!
+  timestamp: String!
+}

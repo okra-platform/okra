@@ -188,7 +188,11 @@ func (r *OkraRuntime) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// generateActorID creates a fully qualified actor ID from the service package
+// generateActorID creates a fully qualified actor ID from the service package.
+// The format is: namespace.ServiceName.version
+// Example: "myapp.GreeterService.v1"
+// This ID is used for actor registration and must match the service name
+// used in the ConnectGateway for proper routing.
 func (r *OkraRuntime) generateActorID(pkg *ServicePackage) string {
 	// Extract namespace from schema metadata
 	namespace := "default"

@@ -214,8 +214,9 @@ func (g *Generator) generateServiceInterface(w *writer.Writer, svc schema.Servic
 		}
 
 		// Generate method signature (no context for WASM)
-		inputType := g.mapToGoType(method.InputType, true)
-		outputType := g.mapToGoType(method.OutputType, true)
+		// Always use pointers for input/output types for consistency with WASM wrapper
+		inputType := "*" + g.mapToGoType(method.InputType, true)
+		outputType := "*" + g.mapToGoType(method.OutputType, true)
 		w.WriteLinef("%s(input %s) (%s, error)", g.exportedName(method.Name), inputType, outputType)
 
 		if i < len(svc.Methods)-1 {

@@ -405,3 +405,95 @@ func TestOkraRuntime_generateActorID(t *testing.T) {
 		})
 	}
 }
+
+// Test: GetActorPID returns correct PID for deployed service
+// Test: GetActorPID returns nil for non-deployed service
+// Test: GetActorPID returns nil when runtime not started
+func TestOkraRuntime_GetActorPID(t *testing.T) {
+	// Helper to create a simple test package
+	createSimpleTestPackage := func() *ServicePackage {
+		// Load the math-service WASM as it's a known good test file
+		wasmPath := filepath.Join("..", "..", "internal", "wasm", "fixture", "math-service", "math-service.wasm")
+		wasmBytes, err := os.ReadFile(wasmPath)
+		require.NoError(t, err)
+		
+		// Create compiled module
+		ctx := context.Background()
+		module, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
+		require.NoError(t, err)
+		
+		return &ServicePackage{
+			ServiceName: "TestService",
+			Module:      module,
+			Schema: &schema.Schema{
+				Meta: schema.Metadata{
+					Namespace: "test",
+					Version:   "v1",
+				},
+			},
+			Config: &config.Config{},
+		}
+	}
+
+	tests := []struct {
+		name           string
+		setupRuntime   func() *OkraRuntime
+		serviceName    string
+		expectedResult bool
+	}{
+		{
+			name: "returns PID for deployed service",
+			setupRuntime: func() *OkraRuntime {
+				logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
+				runtime := NewOkraRuntime(logger)
+				err := runtime.Start(context.Background())
+				require.NoError(t, err)
+				
+				// Deploy a service
+				pkg := createSimpleTestPackage()
+				_, err = runtime.Deploy(context.Background(), pkg)
+				require.NoError(t, err)
+				
+				return runtime
+			},
+			serviceName:    "test.TestService.v1",
+			expectedResult: true,
+		},
+		{
+			name: "returns nil for non-deployed service",
+			setupRuntime: func() *OkraRuntime {
+				logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
+				runtime := NewOkraRuntime(logger)
+				err := runtime.Start(context.Background())
+				require.NoError(t, err)
+				return runtime
+			},
+			serviceName:    "test.NonExistent.v1",
+			expectedResult: false,
+		},
+		{
+			name: "returns nil when runtime not started",
+			setupRuntime: func() *OkraRuntime {
+				logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
+				return NewOkraRuntime(logger)
+			},
+			serviceName:    "test.TestService.v1",
+			expectedResult: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runtime := tt.setupRuntime()
+			defer runtime.Shutdown(context.Background())
+
+			pid := runtime.GetActorPID(tt.serviceName)
+			
+			if tt.expectedResult {
+				assert.NotNil(t, pid, "expected PID to be returned")
+			} else {
+				assert.Nil(t, pid, "expected nil PID")
+			}
+		})
+	}
+}

@@ -29,6 +29,7 @@ type Server struct {
 	config      *config.Config
 	projectRoot string
 	watcher     *FileWatcher
+	logger      zerolog.Logger
 	
 	// Runtime components
 	runtime    runtime.Runtime
@@ -36,8 +37,8 @@ type Server struct {
 	httpServer *http.Server
 	
 	// Current deployment state
-	currentServiceName string
-	currentServiceMu   sync.RWMutex
+	currentActorID   string
+	currentServiceMu sync.RWMutex
 	
 	// Mutex to prevent concurrent builds
 	buildMutex sync.Mutex
@@ -46,14 +47,31 @@ type Server struct {
 
 // NewServer creates a new development server
 func NewServer(cfg *config.Config, projectRoot string) *Server {
+	// Create a logger for the dev server
+	logger := zerolog.New(os.Stderr).With().
+		Timestamp().
+		Str("component", "dev-server").
+		Logger()
+	
 	return &Server{
 		config:      cfg,
 		projectRoot: projectRoot,
+		logger:      logger,
 	}
 }
 
 // Start runs the development server
 func (s *Server) Start(ctx context.Context) error {
+	// Check required tools before starting
+	if err := s.checkRequiredTools(); err != nil {
+		return err
+	}
+	
+	// Validate configuration
+	if err := s.validateConfig(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+	
 	// Initialize runtime with a logger
 	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 	s.runtime = runtime.NewOkraRuntime(logger)
@@ -72,6 +90,11 @@ func (s *Server) Start(ctx context.Context) error {
 	
 	// Run initial build
 	if err := s.buildAll(); err != nil {
+		fmt.Printf("❌ Initial build failed: %v\n", err)
+		fmt.Println("\n💡 Troubleshooting tips:")
+		fmt.Println("   - Check that your schema file exists and is valid")
+		fmt.Println("   - Ensure your source files match the configured language")
+		fmt.Println("   - Verify all required tools are installed (tinygo, buf)")
 		return fmt.Errorf("initial build failed: %w", err)
 	}
 
@@ -97,6 +120,81 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Start watching
 	return s.watcher.Start(ctx)
+}
+
+// checkRequiredTools verifies all necessary tools are installed.
+// This prevents cryptic errors later in the build process by checking upfront
+// that all required development tools are available in the system PATH.
+// The function provides helpful error messages with installation instructions
+// when tools are missing.
+func (s *Server) checkRequiredTools() error {
+	fmt.Println("🔍 Checking required tools...")
+	s.logger.Debug().Msg("checking required tools for development")
+	
+	// Check language-specific tools
+	switch s.config.Language {
+	case "go":
+		// Check for TinyGo
+		tinygoPath, err := exec.LookPath("tinygo")
+		if err != nil {
+			s.logger.Error().Err(err).Msg("TinyGo not found")
+			return fmt.Errorf("TinyGo is required but not installed.\n   Please install it from: https://tinygo.org/getting-started/install/")
+		}
+		fmt.Println("   ✅ TinyGo found")
+		s.logger.Debug().Str("path", tinygoPath).Msg("TinyGo executable found")
+		
+		// Check for Go
+		goPath, err := exec.LookPath("go")
+		if err != nil {
+			s.logger.Error().Err(err).Msg("Go not found")
+			return fmt.Errorf("Go is required but not installed.\n   Please install it from: https://golang.org/dl/")
+		}
+		fmt.Println("   ✅ Go found")
+		s.logger.Debug().Str("path", goPath).Msg("Go executable found")
+		
+	case "typescript":
+		// Check for Node.js
+		if _, err := exec.LookPath("node"); err != nil {
+			return fmt.Errorf("Node.js is required but not installed.\n   Please install it from: https://nodejs.org/")
+		}
+		fmt.Println("   ✅ Node.js found")
+	}
+	
+	// Check for buf (required for all languages)
+	if _, err := exec.LookPath("buf"); err != nil {
+		return fmt.Errorf("buf CLI is required but not installed.\n   Please install it from: https://buf.build/docs/installation")
+	}
+	fmt.Println("   ✅ buf found")
+	
+	return nil
+}
+
+// validateConfig checks that the configuration is valid before starting the dev server.
+// This includes verifying that referenced files exist and that the configuration
+// uses supported values. Early validation provides better error messages than
+// failing during runtime operations.
+func (s *Server) validateConfig() error {
+	// Check schema file exists
+	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
+	if _, err := os.Stat(schemaPath); err != nil {
+		return fmt.Errorf("schema file not found: %s", schemaPath)
+	}
+	
+	// Check source file/directory exists
+	sourcePath := filepath.Join(s.projectRoot, s.config.Source)
+	if _, err := os.Stat(sourcePath); err != nil {
+		return fmt.Errorf("source path not found: %s", sourcePath)
+	}
+	
+	// Validate language
+	switch s.config.Language {
+	case "go", "typescript":
+		// Valid languages
+	default:
+		return fmt.Errorf("unsupported language: %s (supported: go, typescript)", s.config.Language)
+	}
+	
+	return nil
 }
 
 // Stop gracefully shuts down the development server
@@ -316,9 +414,17 @@ func (s *Server) deployServicePackage() error {
 	
 	// Load WASM module
 	wasmPath := filepath.Join(s.projectRoot, s.config.Build.Output)
+	if _, err := os.Stat(wasmPath); os.IsNotExist(err) {
+		return fmt.Errorf("WASM file not found at %s. Build may have failed", wasmPath)
+	}
+	
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
-		return fmt.Errorf("failed to read WASM file: %w", err)
+		return fmt.Errorf("failed to read WASM file at %s: %w", wasmPath, err)
+	}
+	
+	if len(wasmBytes) == 0 {
+		return fmt.Errorf("WASM file is empty: %s", wasmPath)
 	}
 	
 	compiledModule, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
@@ -334,38 +440,47 @@ func (s *Server) deployServicePackage() error {
 	
 	// Load protobuf descriptors if available
 	descPath := filepath.Join(s.projectRoot, ".okra", "service.pb.desc")
+	s.logger.Debug().Str("path", descPath).Msg("checking for protobuf descriptors")
+	
 	if _, err := os.Stat(descPath); err == nil {
 		fds, err := runtime.LoadFileDescriptors(descPath)
 		if err != nil {
 			fmt.Printf("⚠️  Warning: failed to load protobuf descriptors: %v\n", err)
+			s.logger.Error().Err(err).Str("path", descPath).Msg("failed to load protobuf descriptors")
 		} else {
 			pkg.WithFileDescriptors(fds)
-			fmt.Println("📦 Loaded protobuf descriptors")
+			fmt.Printf("📦 Loaded protobuf descriptors from %s\n", descPath)
+			s.logger.Debug().Str("path", descPath).Msg("protobuf descriptors loaded successfully")
 		}
+	} else {
+		fmt.Printf("⚠️  Warning: protobuf descriptor file not found: %s\n", descPath)
+		s.logger.Warn().Err(err).Str("path", descPath).Msg("protobuf descriptor file not found")
 	}
 	
 	// Check if service is already deployed
 	s.currentServiceMu.RLock()
-	currentService := s.currentServiceName
+	currentActorID := s.currentActorID
 	s.currentServiceMu.RUnlock()
 	
 	// Undeploy existing service if needed
-	if currentService != "" && currentService == serviceName {
+	if currentActorID != "" {
 		fmt.Printf("🔄 Redeploying service: %s\n", serviceName)
-		if err := s.runtime.Undeploy(ctx, serviceName); err != nil {
+		if err := s.runtime.Undeploy(ctx, currentActorID); err != nil {
 			fmt.Printf("⚠️  Warning: failed to undeploy existing service: %v\n", err)
 		}
 	}
 	
 	// Deploy the service
+	fmt.Printf("🚀 Deploying service: %s\n", serviceName)
 	actorID, err := s.runtime.Deploy(ctx, pkg)
 	if err != nil {
 		return fmt.Errorf("failed to deploy service: %w", err)
 	}
+	fmt.Printf("✅ Service deployed successfully: %s (actor: %s)\n", serviceName, actorID)
 	
-	// Update current service name
+	// Update current actor ID
 	s.currentServiceMu.Lock()
-	s.currentServiceName = serviceName
+	s.currentActorID = actorID
 	s.currentServiceMu.Unlock()
 	
 	// Get the actor PID for the service
@@ -376,12 +491,20 @@ func (s *Server) deployServicePackage() error {
 	
 	// Update ConnectGateway with the service
 	if pkg.FileDescriptors != nil {
+		s.logger.Debug().
+			Str("service", serviceName).
+			Str("actorID", actorID).
+			Msg("updating gateway with service")
+		
 		if err := s.gateway.UpdateService(ctx, serviceName, pkg.FileDescriptors, actorPID); err != nil {
 			return fmt.Errorf("failed to update gateway: %w", err)
 		}
 		fmt.Printf("🚀 Service %s deployed and exposed via ConnectRPC\n", serviceName)
 	} else {
-		fmt.Printf("🚀 Service %s deployed (no external API)\n", serviceName)
+		fmt.Printf("⚠️  Service %s deployed without FileDescriptors - no ConnectRPC endpoint\n", serviceName)
+		s.logger.Warn().
+			Str("service", serviceName).
+			Msg("service deployed without FileDescriptors")
 	}
 	
 	return nil
@@ -391,23 +514,48 @@ func (s *Server) deployServicePackage() error {
 func (s *Server) generateCode(schemaPath string) error {
 	start := time.Now()
 	
+	// Check schema file exists
+	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
+		return fmt.Errorf("schema file not found: %s", schemaPath)
+	}
+	
 	// Read schema file
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
-		return fmt.Errorf("failed to read schema: %w", err)
+		return fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
 	}
+	
+	if len(content) == 0 {
+		return fmt.Errorf("schema file is empty: %s", schemaPath)
+	}
+	
+	// Debug: log schema content
+	s.logger.Debug().
+		Str("path", schemaPath).
+		Str("content", string(content)).
+		Int("size", len(content)).
+		Msg("read schema file")
 
 	// Parse schema
 	parsedSchema, err := schema.ParseSchema(string(content))
 	if err != nil {
 		return fmt.Errorf("failed to parse schema: %w", err)
 	}
+	
+	// Debug: log services found
+	s.logger.Debug().
+		Int("service_count", len(parsedSchema.Services)).
+		Interface("services", parsedSchema.Services).
+		Msg("parsed schema services")
+	if len(parsedSchema.Services) == 0 {
+		s.logger.Warn().Msg("no services found in parsed schema")
+	}
 
 	// Get appropriate code generator
 	var generator codegen.Generator
 	switch s.config.Language {
 	case "go":
-		generator = golang.NewGenerator("main")
+		generator = golang.NewGenerator("types")
 	case "typescript":
 		generator = typescript.NewGenerator("service")
 	default:
@@ -458,8 +606,12 @@ func (s *Server) generateProtobuf(parsedSchema *schema.Schema) error {
 		return fmt.Errorf("failed to create .okra directory: %w", err)
 	}
 	
-	// Generate protobuf file
-	protoGen := protobuf.NewGenerator("service")
+	// Generate protobuf file using namespace from schema
+	namespace := parsedSchema.Meta.Namespace
+	if namespace == "" {
+		namespace = "service"
+	}
+	protoGen := protobuf.NewGenerator(namespace)
 	protoContent, err := protoGen.Generate(parsedSchema)
 	if err != nil {
 		return fmt.Errorf("failed to generate protobuf: %w", err)
@@ -506,9 +658,11 @@ lint:
 // buildWASM compiles the source code to WASM
 func (s *Server) buildWASM() error {
 	start := time.Now()
+	s.logger.Debug().Str("language", s.config.Language).Msg("starting WASM build")
 	
 	// Ensure build directory exists
 	buildDir := filepath.Dir(filepath.Join(s.projectRoot, s.config.Build.Output))
+	s.logger.Debug().Str("build_dir", buildDir).Msg("ensuring build directory exists")
 	if err := os.MkdirAll(buildDir, 0755); err != nil {
 		return fmt.Errorf("failed to create build directory: %w", err)
 	}
@@ -522,9 +676,25 @@ func (s *Server) buildWASM() error {
 			return fmt.Errorf("failed to read schema: %w", err)
 		}
 		
+		// Debug: log schema content for WASM build
+		s.logger.Debug().
+			Str("path", schemaPath).
+			Str("content", string(schemaContent)).
+			Int("size", len(schemaContent)).
+			Msg("read schema file for WASM build")
+		
 		parsedSchema, err := schema.ParseSchema(string(schemaContent))
 		if err != nil {
 			return fmt.Errorf("failed to parse schema: %w", err)
+		}
+		
+		// Debug: log services found
+		s.logger.Debug().
+			Int("service_count", len(parsedSchema.Services)).
+			Interface("services", parsedSchema.Services).
+			Msg("parsed schema services in buildWASM")
+		if len(parsedSchema.Services) == 0 {
+			s.logger.Error().Msg("no services found in parsed schema for WASM build")
 		}
 		
 		// Use Go builder with hidden wrapper

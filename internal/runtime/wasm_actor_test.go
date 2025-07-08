@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/tochemey/goakt/v2/actors"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // MockWASMWorkerPool is a mock implementation of WASMWorkerPool
@@ -571,5 +573,199 @@ func TestServicePackage(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, ErrNoServices, err)
 		assert.Nil(t, pkg)
+	})
+}
+
+// Test: Unknown message type handling
+// Test: Service request with timeout
+// Test: Service request with metadata propagation
+// Test: Worker pool execution errors
+func TestWASMActor_EdgeCases(t *testing.T) {
+	// Test: Unknown message type
+	t.Run("unknown message type", func(t *testing.T) {
+		pkg := createTestServicePackage()
+		mockPool := createMockPool()
+		actor := NewWASMActor(pkg, WithWorkerPool(mockPool))
+		
+		actorSystem, err := actors.NewActorSystem("test-edge-system-1")
+		require.NoError(t, err)
+		
+		err = actorSystem.Start(context.Background())
+		require.NoError(t, err)
+		defer actorSystem.Stop(context.Background())
+		
+		actorRef, err := actorSystem.Spawn(context.Background(), "test-edge-actor-1", actor)
+		require.NoError(t, err)
+		
+		// Send a protobuf message type that the actor doesn't handle
+		// We'll use a Duration message which is a valid protobuf but not handled by the actor
+		unknownMsg := &durationpb.Duration{
+			Seconds: 123,
+			Nanos:   456,
+		}
+		err = actors.Tell(context.Background(), actorRef, unknownMsg)
+		require.NoError(t, err)
+		
+		// Give some time for the message to be processed
+		time.Sleep(10 * time.Millisecond)
+		
+		// Actor should still be alive and responsive
+		healthReply, err := actors.Ask(context.Background(), actorRef, &pb.HealthCheck{Ping: "ping"}, time.Second)
+		require.NoError(t, err)
+		healthResp, ok := healthReply.(*pb.HealthCheckResponse)
+		require.True(t, ok)
+		assert.Equal(t, "ping", healthResp.Pong) // The implementation returns the ping value
+		assert.True(t, healthResp.Ready)
+	})
+	
+	// Test: Service request with timeout
+	t.Run("service request timeout", func(t *testing.T) {
+		pkg := createTestServicePackage()
+		mockPool := createMockPool()
+		actor := NewWASMActor(pkg, WithWorkerPool(mockPool))
+		
+		// Mock a slow invocation that would timeout
+		mockPool.On("Invoke", mock.Anything, "add", []byte(`{"a": 1, "b": 2}`)).
+			Run(func(args mock.Arguments) {
+				// Simulate slow execution
+				ctx := args.Get(0).(context.Context)
+				select {
+				case <-time.After(2 * time.Second):
+				case <-ctx.Done():
+				}
+			}).
+			Return([]byte{}, context.DeadlineExceeded).Once()
+		
+		actorSystem, err := actors.NewActorSystem("test-edge-system-2")
+		require.NoError(t, err)
+		
+		err = actorSystem.Start(context.Background())
+		require.NoError(t, err)
+		defer actorSystem.Stop(context.Background())
+		
+		actorRef, err := actorSystem.Spawn(context.Background(), "test-edge-actor-2", actor)
+		require.NoError(t, err)
+		
+		// Wait for actor to be ready
+		time.Sleep(10 * time.Millisecond)
+		
+		// Send service request with very short timeout
+		req := &pb.ServiceRequest{
+			Id:     "test-timeout",
+			Method: "add",
+			Input:  []byte(`{"a": 1, "b": 2}`),
+			Timeout: &durationpb.Duration{
+				Seconds: 0,
+				Nanos:   100000000, // 100ms
+			},
+		}
+		
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+		
+		reply, err := actors.Ask(ctx, actorRef, req, time.Second)
+		require.NoError(t, err)
+		
+		resp, ok := reply.(*pb.ServiceResponse)
+		require.True(t, ok)
+		assert.False(t, resp.Success)
+		assert.NotNil(t, resp.Error)
+		assert.Contains(t, resp.Error.Message, "deadline exceeded")
+		
+		mockPool.AssertExpectations(t)
+	})
+	
+	// Test: Service request with metadata propagation
+	t.Run("metadata propagation", func(t *testing.T) {
+		pkg := createTestServicePackage()
+		mockPool := createMockPool()
+		actor := NewWASMActor(pkg, WithWorkerPool(mockPool))
+		
+		expectedOutput := []byte(`{"result": 3}`)
+		mockPool.On("Invoke", mock.Anything, "add", []byte(`{"a": 1, "b": 2}`)).
+			Return(expectedOutput, nil).Once()
+		
+		actorSystem, err := actors.NewActorSystem("test-edge-system-3")
+		require.NoError(t, err)
+		
+		err = actorSystem.Start(context.Background())
+		require.NoError(t, err)
+		defer actorSystem.Stop(context.Background())
+		
+		actorRef, err := actorSystem.Spawn(context.Background(), "test-edge-actor-3", actor)
+		require.NoError(t, err)
+		
+		// Wait for actor to be ready
+		time.Sleep(10 * time.Millisecond)
+		
+		// Send request with metadata
+		req := &pb.ServiceRequest{
+			Id:     "test-metadata",
+			Method: "add",
+			Input:  []byte(`{"a": 1, "b": 2}`),
+			Metadata: map[string]string{
+				"trace-id":    "123456",
+				"user-id":     "user-789",
+				"custom-header": "value",
+			},
+		}
+		
+		reply, err := actors.Ask(context.Background(), actorRef, req, time.Second)
+		require.NoError(t, err)
+		
+		resp, ok := reply.(*pb.ServiceResponse)
+		require.True(t, ok)
+		assert.True(t, resp.Success)
+		assert.Equal(t, expectedOutput, resp.Output)
+		
+		// Verify metadata is propagated to response
+		assert.NotNil(t, resp.Metadata)
+		assert.Equal(t, "123456", resp.Metadata["trace-id"])
+		assert.Equal(t, "user-789", resp.Metadata["user-id"]) 
+		assert.Equal(t, "value", resp.Metadata["custom-header"])
+		
+		mockPool.AssertExpectations(t)
+	})
+	
+	// Test: Worker pool execution error
+	t.Run("worker pool execution error", func(t *testing.T) {
+		pkg := createTestServicePackage()
+		mockPool := createMockPool()
+		actor := NewWASMActor(pkg, WithWorkerPool(mockPool))
+		
+		// Mock an execution error
+		mockPool.On("Invoke", mock.Anything, "add", []byte(`{"a": 1, "b": 2}`)).
+			Return([]byte{}, fmt.Errorf("WASM execution failed: out of memory")).Once()
+		
+		actorSystem, err := actors.NewActorSystem("test-edge-system-4")
+		require.NoError(t, err)
+		
+		err = actorSystem.Start(context.Background())
+		require.NoError(t, err)
+		defer actorSystem.Stop(context.Background())
+		
+		actorRef, err := actorSystem.Spawn(context.Background(), "test-edge-actor-4", actor)
+		require.NoError(t, err)
+		
+		// Wait for actor to be ready
+		time.Sleep(10 * time.Millisecond)
+		
+		req := &pb.ServiceRequest{
+			Id:     "test-exec-error",
+			Method: "add",
+			Input:  []byte(`{"a": 1, "b": 2}`),
+		}
+		
+		reply, err := actors.Ask(context.Background(), actorRef, req, time.Second)
+		require.NoError(t, err)
+		
+		resp, ok := reply.(*pb.ServiceResponse)
+		require.True(t, ok)
+		assert.False(t, resp.Success)
+		assert.NotNil(t, resp.Error)
+		assert.Equal(t, "EXECUTION_ERROR", resp.Error.Code)
+		assert.Contains(t, resp.Error.Message, "WASM execution failed")
+		
+		mockPool.AssertExpectations(t)
 	})
 }

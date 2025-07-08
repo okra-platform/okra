@@ -143,10 +143,22 @@ func (g *connectGateway) createDynamicHandler(serviceDesc protoreflect.ServiceDe
 			}
 			defer r.Body.Close()
 			
-			// Unmarshal the request
-			if err := proto.Unmarshal(body, inputMsg); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
+			// Check content type to determine format
+			contentType := r.Header.Get("Content-Type")
+			
+			// Unmarshal the request based on content type
+			if contentType == "application/json" || contentType == "application/connect+json" {
+				// JSON format
+				if err := protojson.Unmarshal(body, inputMsg); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			} else {
+				// Default to protobuf format
+				if err := proto.Unmarshal(body, inputMsg); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 			
 			// Convert to JSON for actor messaging
@@ -195,15 +207,27 @@ func (g *connectGateway) createDynamicHandler(serviceDesc protoreflect.ServiceDe
 				return
 			}
 			
-			// Marshal response
-			respBytes, err := proto.Marshal(outputMsg)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+			// Marshal response based on request content type
+			var respBytes []byte
+			if contentType == "application/json" || contentType == "application/connect+json" {
+				// Return JSON response
+				respBytes, err = protojson.Marshal(outputMsg)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", contentType)
+			} else {
+				// Return protobuf response
+				respBytes, err = proto.Marshal(outputMsg)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "application/proto")
 			}
 			
 			// Write response
-			w.Header().Set("Content-Type", "application/proto")
 			w.WriteHeader(http.StatusOK)
 			w.Write(respBytes)
 		})
