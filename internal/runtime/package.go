@@ -1,9 +1,13 @@
 package runtime
 
 import (
+	"os"
+
 	"github.com/okra-platform/okra/internal/config"
 	"github.com/okra-platform/okra/internal/schema"
 	"github.com/okra-platform/okra/internal/wasm"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 // Type aliases to work around the compilation issue
@@ -25,6 +29,9 @@ type ServicePackage struct {
 	
 	// Methods maps method names to their definitions for quick lookup
 	Methods map[string]*Method
+	
+	// FileDescriptors contains protobuf descriptors for external service exposure
+	FileDescriptors *descriptorpb.FileDescriptorSet
 }
 
 // NewServicePackage creates a new service package with validation
@@ -59,8 +66,29 @@ func NewServicePackage(module wasm.WASMCompiledModule, schema *schema.Schema, co
 	}, nil
 }
 
+// WithFileDescriptors adds a FileDescriptorSet to an existing ServicePackage
+func (sp *ServicePackage) WithFileDescriptors(fds *descriptorpb.FileDescriptorSet) *ServicePackage {
+	sp.FileDescriptors = fds
+	return sp
+}
+
 // GetMethod returns the method definition for the given name
 func (sp *ServicePackage) GetMethod(name string) (*Method, bool) {
 	method, ok := sp.Methods[name]
 	return method, ok
+}
+
+// LoadFileDescriptors loads a FileDescriptorSet from a file
+func LoadFileDescriptors(path string) (*descriptorpb.FileDescriptorSet, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	
+	fds := &descriptorpb.FileDescriptorSet{}
+	if err := proto.Unmarshal(data, fds); err != nil {
+		return nil, err
+	}
+	
+	return fds, nil
 }

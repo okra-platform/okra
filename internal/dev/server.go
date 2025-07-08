@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/okra-platform/okra/internal/codegen"
 	"github.com/okra-platform/okra/internal/codegen/golang"
+	"github.com/okra-platform/okra/internal/codegen/protobuf"
 	"github.com/okra-platform/okra/internal/codegen/typescript"
 	"github.com/okra-platform/okra/internal/config"
 	"github.com/okra-platform/okra/internal/schema"
@@ -247,6 +249,65 @@ func (s *Server) generateCode(schemaPath string) error {
 	}
 
 	fmt.Printf("📄 Generated %s in %v\n", filepath.Base(outputPath), time.Since(start))
+	
+	// Generate protobuf definitions
+	if err := s.generateProtobuf(parsedSchema); err != nil {
+		return fmt.Errorf("failed to generate protobuf: %w", err)
+	}
+	
+	return nil
+}
+
+// generateProtobuf generates protobuf definitions and compiles them with buf
+func (s *Server) generateProtobuf(parsedSchema *schema.Schema) error {
+	// Create .okra directory for temporary files
+	okraDir := filepath.Join(s.projectRoot, ".okra")
+	if err := os.MkdirAll(okraDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .okra directory: %w", err)
+	}
+	
+	// Generate protobuf file
+	protoGen := protobuf.NewGenerator("service")
+	protoContent, err := protoGen.Generate(parsedSchema)
+	if err != nil {
+		return fmt.Errorf("failed to generate protobuf: %w", err)
+	}
+	
+	// Write protobuf file
+	protoPath := filepath.Join(okraDir, "service.proto")
+	if err := os.WriteFile(protoPath, []byte(protoContent), 0644); err != nil {
+		return fmt.Errorf("failed to write protobuf file: %w", err)
+	}
+	
+	// Check if buf is installed
+	if _, err := exec.LookPath("buf"); err != nil {
+		return fmt.Errorf("buf CLI is not installed. Please install it from https://buf.build/docs/installation")
+	}
+	
+	// Create buf.yaml if it doesn't exist
+	bufYamlPath := filepath.Join(okraDir, "buf.yaml")
+	bufYamlContent := `version: v1
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT
+`
+	if err := os.WriteFile(bufYamlPath, []byte(bufYamlContent), 0644); err != nil {
+		return fmt.Errorf("failed to write buf.yaml: %w", err)
+	}
+	
+	// Compile protobuf to descriptor set
+	descPath := filepath.Join(okraDir, "service.pb.desc")
+	cmd := exec.Command("buf", "build", "--output", descPath, "--as-file-descriptor-set", protoPath)
+	cmd.Dir = okraDir
+	
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to compile protobuf with buf: %w\nOutput: %s", err, output)
+	}
+	
+	fmt.Printf("🔧 Generated protobuf descriptor: service.pb.desc\n")
 	return nil
 }
 
