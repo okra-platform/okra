@@ -91,8 +91,8 @@ func (s *mathService) Add(input *types.AddInput) (*types.AddOutput, error) {
 	// Create server
 	server := NewServer(cfg, tmpDir)
 
-	// Run build
-	err = server.buildAll()
+	// Run build (code generation + WASM compilation)
+	err = server.build()
 	
 	// Check if TinyGo is available or has compilation issues
 	if err != nil {

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package test;
+
+option go_package = "github.com/okra-platform/okra/generated/pb";
+
+message GreetRequest {
+  string name = 1;
+}
+
+message GreetResponse {
+  string message = 1;
+  string timestamp = 2;
+}
+
+service Service {
+  rpc greet(GreetRequest) returns (GreetResponse);
+}
+

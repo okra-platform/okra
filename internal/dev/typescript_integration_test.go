@@ -13,7 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/okra-platform/okra/internal/build"
 	"github.com/okra-platform/okra/internal/config"
+	"github.com/rs/zerolog"
 )
 
 // Test: Full TypeScript development workflow
@@ -50,14 +52,18 @@ func TestTypeScriptDevelopmentWorkflow_Integration(t *testing.T) {
 	}
 
 	// Test: Create dev server
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
 	server := &Server{
 		config:      cfg,
 		projectRoot: projectDir,
+		logger:      logger,
+		builder:     build.NewServiceBuilder(cfg, projectDir, logger),
 	}
 
 	// Test: Run initial build
 	t.Run("initial build", func(t *testing.T) {
-		err := server.buildAll()
+		// Run build (code generation + WASM compilation)
+		err := server.build()
 		
 		// Build will fail without Javy, but we can verify it gets to that point
 		if err != nil {
@@ -240,16 +246,20 @@ func TestTypeScriptConcurrentBuilds(t *testing.T) {
 	projectDir := t.TempDir()
 	setupTypeScriptProject(t, projectDir)
 
-	server := &Server{
-		config: &config.Config{
-			Language: "typescript",
-			Source:   "./src",
-			Schema:   "./service.okra.gql",
-			Build: config.BuildConfig{
-				Output: "./build/service.wasm",
-			},
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	cfg := &config.Config{
+		Language: "typescript",
+		Source:   "./src",
+		Schema:   "./service.okra.gql",
+		Build: config.BuildConfig{
+			Output: "./build/service.wasm",
 		},
+	}
+	server := &Server{
+		config:      cfg,
 		projectRoot: projectDir,
+		logger:      logger,
+		builder:     build.NewServiceBuilder(cfg, projectDir, logger),
 	}
 
 	// Start multiple builds concurrently
@@ -261,9 +271,9 @@ func TestTypeScriptConcurrentBuilds(t *testing.T) {
 
 	for i := 0; i < buildCount; i++ {
 		go func() {
-			// Each goroutine calls buildAll on the same server instance
+			// Each goroutine calls build on the same server instance
 			// The mutex in the server will handle concurrency
-			results <- server.buildAll()
+			results <- server.build()
 		}()
 	}
 

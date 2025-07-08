@@ -5,14 +5,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/okra-platform/okra/internal/build"
 	"github.com/okra-platform/okra/internal/config"
 	"github.com/okra-platform/okra/internal/runtime"
 	"github.com/okra-platform/okra/internal/schema"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -143,32 +146,127 @@ func TestServer_handleFileChange(t *testing.T) {
 	})
 }
 
-func TestServer_generateCode(t *testing.T) {
+func TestServer_build(t *testing.T) {
+	// This test verifies that build() only builds without deployment
 	tmpDir := t.TempDir()
+	
+	// Create test project structure
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "service"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "build"), 0755))
+	
+	// Create schema file
 	schemaPath := filepath.Join(tmpDir, "service.okra.gql")
 	schemaContent := `
-		@okra(namespace: "test", version: "v1")
-		service TestService {
-			test(): String
-		}
-	`
-	
-	err := os.WriteFile(schemaPath, []byte(schemaContent), 0644)
-	require.NoError(t, err)
-	
-	// This test would need actual schema parser and code generator
-	// For now, we're just ensuring the structure is correct
-	// In a real implementation, we'd inject mocks for these dependencies
+@okra(namespace: "test", version: "v1")
+service TestService {
+	greet(input: GreetRequest): GreetResponse
 }
 
-func TestServer_buildWASM_unsupportedLanguage(t *testing.T) {
-	s := &Server{
-		config: &config.Config{
-			Language: "rust",
+type GreetRequest {
+	name: String!
+}
+
+type GreetResponse {
+	message: String!
+}`
+	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
+	
+	// Create go.mod
+	goModContent := `module test-service
+
+go 1.21`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644))
+	
+	// Create service implementation
+	serviceContent := `package service
+
+import "test-service/types"
+
+type Service struct{}
+
+func NewService() types.TestService {
+	return &Service{}
+}
+
+func (s *Service) Greet(req *types.GreetRequest) (*types.GreetResponse, error) {
+	return &types.GreetResponse{
+		Message: "Hello, " + req.Name + "!",
+	}, nil
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "service", "service.go"), []byte(serviceContent), 0644))
+	
+	// Create server with no runtime (to verify build doesn't deploy)
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	cfg := &config.Config{
+		Language: "go",
+		Schema:   "service.okra.gql",
+		Source:   "./service",
+		Build: config.BuildConfig{
+			Output: "./build/service.wasm",
 		},
 	}
 	
-	err := s.buildWASM()
+	s := &Server{
+		config:      cfg,
+		projectRoot: tmpDir,
+		logger:      logger,
+		builder:     build.NewServiceBuilder(cfg, tmpDir, logger),
+		// Note: runtime is nil, so deployment would fail if attempted
+	}
+	
+	// Test that build() succeeds without runtime
+	err := s.build()
+	if err != nil {
+		// Skip if TinyGo is not available
+		if os.IsNotExist(err) || 
+			strings.Contains(err.Error(), "tinygo") || 
+			strings.Contains(err.Error(), "executable file not found") {
+			t.Skip("TinyGo not available, skipping build test")
+		}
+		require.NoError(t, err)
+	}
+	
+	// Verify interface was generated
+	interfacePath := filepath.Join(tmpDir, "types", "interface.go")
+	assert.FileExists(t, interfacePath)
+}
+
+func TestServer_buildWASM_unsupportedLanguage(t *testing.T) {
+	// Create a logger for the test
+	logger := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Language: "rust",
+		Schema:   "service.okra.gql",
+	}
+	
+	// Create a dummy schema file
+	schemaPath := filepath.Join(tmpDir, "service.okra.gql")
+	schemaContent := `
+@okra(namespace: "test", version: "v1")
+service TestService {
+	test(input: TestInput): TestOutput
+}
+
+type TestInput {
+	value: String!
+}
+
+type TestOutput {
+	result: String!
+}`
+	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
+	
+	s := &Server{
+		config:      cfg,
+		projectRoot: tmpDir,
+		logger:      logger,
+		builder:     build.NewServiceBuilder(cfg, tmpDir, logger),
+	}
+	
+	// Test build with unsupported language
+	err := s.build()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported language")
 }

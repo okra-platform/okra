@@ -1,4 +1,4 @@
-package dev
+package build
 
 import (
 	_ "embed"
@@ -55,6 +55,7 @@ func (b *GoBuilder) Build() error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
+	b.logger.Debug().Str("tmpDir", tmpDir).Msg("created temp directory")
 	// Check if we should keep the build directory for debugging
 	// OKRA_KEEP_BUILD_DIR environment variable can be set to any non-empty value
 	// to preserve the temporary build directory. This is useful for:
@@ -77,16 +78,20 @@ func (b *GoBuilder) Build() error {
 	b.logger.Debug().Str("path", tmpDir).Msg("created temp build directory")
 
 	// Check go.mod exists
+	b.logger.Debug().Str("projectRoot", b.projectRoot).Msg("checking go.mod exists")
 	goModPath := filepath.Join(b.projectRoot, "go.mod")
+	b.logger.Debug().Str("goModPath", goModPath).Msg("looking for go.mod at path")
 	if _, err := os.Stat(goModPath); os.IsNotExist(err) {
 		return fmt.Errorf("go.mod not found in project root. Please run 'go mod init' first")
 	}
 
 	// Extract module path from go.mod
+	b.logger.Debug().Msg("extracting module path from go.mod")
 	modulePath, err := b.extractModulePath()
 	if err != nil {
 		return fmt.Errorf("failed to extract module path from go.mod: %w", err)
 	}
+	b.logger.Debug().Str("modulePath", modulePath).Msg("extracted module path")
 
 	// Calculate the user service import path
 	userServiceImport := modulePath
@@ -109,7 +114,7 @@ func (b *GoBuilder) Build() error {
 		} else {
 			// If source is a directory, append it to the module path
 			// Use forward slashes for import paths
-			userServiceImport = modulePath + "/" + strings.ReplaceAll(cleanSource, string(filepath.Separator), "/")
+			userServiceImport = modulePath + "/" + strings.TrimSuffix(strings.ReplaceAll(cleanSource, string(filepath.Separator), "/"), "/")
 		}
 	}
 
@@ -117,6 +122,8 @@ func (b *GoBuilder) Build() error {
 	b.logger.Debug().
 		Str("module_path", modulePath).
 		Str("user_service_import", userServiceImport).
+		Str("config_source", b.config.Source).
+		Str("project_root", b.projectRoot).
 		Msg("generating WASI wrapper")
 	if err := b.generateWrapper(tmpDir, modulePath, userServiceImport); err != nil {
 		return fmt.Errorf("failed to generate wrapper: %w", err)
@@ -186,6 +193,7 @@ func (b *GoBuilder) Build() error {
 	}
 	
 	// Run TinyGo build
+	b.logger.Debug().Str("tmpDir", tmpDir).Msg("starting TinyGo build")
 	if err := b.runTinyGoBuild(tmpDir); err != nil {
 		return fmt.Errorf("TinyGo build failed: %w", err)
 	}
@@ -352,6 +360,11 @@ func (b *GoBuilder) runTinyGoBuild(tmpDir string) error {
 	cmd := exec.Command("tinygo", args...)
 	cmd.Dir = tmpDir
 
+	b.logger.Debug().
+		Str("command", "tinygo " + strings.Join(args, " ")).
+		Str("working_dir", tmpDir).
+		Msg("executing TinyGo command")
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Provide detailed error information
@@ -364,8 +377,11 @@ func (b *GoBuilder) runTinyGoBuild(tmpDir string) error {
 		errorMsg += "\n  - Missing imports in service implementation"
 		errorMsg += "\n  - Syntax errors in generated or user code"
 		errorMsg += "\n  - Incompatible Go features for TinyGo/WASI target"
-		return fmt.Errorf(errorMsg)
+		return fmt.Errorf("%s", errorMsg)
 	}
+	
+	// Log successful build
+	b.logger.Debug().Msg("TinyGo build completed successfully")
 
 	return nil
 }

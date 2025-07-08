@@ -13,10 +13,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/okra-platform/okra/internal/codegen"
-	"github.com/okra-platform/okra/internal/codegen/golang"
-	"github.com/okra-platform/okra/internal/codegen/protobuf"
-	"github.com/okra-platform/okra/internal/codegen/typescript"
+	"github.com/okra-platform/okra/internal/build"
 	"github.com/okra-platform/okra/internal/config"
 	"github.com/okra-platform/okra/internal/runtime"
 	"github.com/okra-platform/okra/internal/schema"
@@ -43,6 +40,9 @@ type Server struct {
 	// Mutex to prevent concurrent builds
 	buildMutex sync.Mutex
 	building   bool
+	
+	// Shared builder instance
+	builder build.Builder
 }
 
 // NewServer creates a new development server
@@ -57,6 +57,7 @@ func NewServer(cfg *config.Config, projectRoot string) *Server {
 		config:      cfg,
 		projectRoot: projectRoot,
 		logger:      logger,
+		builder:     build.NewServiceBuilder(cfg, projectRoot, logger),
 	}
 }
 
@@ -88,8 +89,8 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start HTTP server: %w", err)
 	}
 	
-	// Run initial build
-	if err := s.buildAll(); err != nil {
+	// Run initial build and deployment
+	if err := s.buildAndDeploy(); err != nil {
 		fmt.Printf("❌ Initial build failed: %v\n", err)
 		fmt.Println("\n💡 Troubleshooting tips:")
 		fmt.Println("   - Check that your schema file exists and is valid")
@@ -289,20 +290,19 @@ func (s *Server) handleSchemaChange(path string) {
 		s.buildMutex.Unlock()
 	}()
 
-	// Regenerate service interface from schema
-	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
-	if err := s.generateCode(schemaPath); err != nil {
-		fmt.Printf("❌ Interface generation failed: %v\n", err)
+	// Rebuild and redeploy with new schema
+	if err := s.build(); err != nil {
+		fmt.Printf("❌ Build failed: %v\n", err)
 		return
 	}
 
-	// Rebuild WASM with new interface
-	if err := s.buildWASM(); err != nil {
-		fmt.Printf("❌ WASM build failed: %v\n", err)
+	// Deploy the updated service
+	if err := s.deployServicePackage(); err != nil {
+		fmt.Printf("❌ Service deployment failed: %v\n", err)
 		return
 	}
 
-	fmt.Println("✅ Build completed successfully!")
+	fmt.Println("✅ Build and deployment completed successfully!")
 }
 
 // handleSourceChange handles changes to source code files
@@ -324,25 +324,23 @@ func (s *Server) handleSourceChange(path string) {
 		s.buildMutex.Unlock()
 	}()
 
-	// Rebuild WASM
+	// Only rebuild WASM (no need to regenerate interface for source changes)
 	if err := s.buildWASM(); err != nil {
 		fmt.Printf("❌ WASM build failed: %v\n", err)
 		return
 	}
 	
-	// Deploy the service package
+	// Deploy the updated service
 	if err := s.deployServicePackage(); err != nil {
 		fmt.Printf("❌ Service deployment failed: %v\n", err)
 		return
 	}
 
-	fmt.Println("✅ Build completed successfully!")
+	fmt.Println("✅ Build and deployment completed successfully!")
 }
 
-// buildAll runs the complete build pipeline
-func (s *Server) buildAll() error {
-	fmt.Println("🔨 Running initial build...")
-	
+// build performs code generation and WASM compilation without deployment
+func (s *Server) build() error {
 	// Generate service interface from schema
 	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
 	if err := s.generateCode(schemaPath); err != nil {
@@ -354,7 +352,19 @@ func (s *Server) buildAll() error {
 		return fmt.Errorf("WASM build failed: %w", err)
 	}
 
-	// Deploy the service package
+	return nil
+}
+
+// buildAndDeploy runs the complete build pipeline including deployment to the runtime
+func (s *Server) buildAndDeploy() error {
+	fmt.Println("🔨 Running initial build...")
+	
+	// First build the code
+	if err := s.build(); err != nil {
+		return err
+	}
+
+	// Then deploy the service package
 	if err := s.deployServicePackage(); err != nil {
 		return fmt.Errorf("failed to deploy service package: %w", err)
 	}
@@ -514,243 +524,38 @@ func (s *Server) deployServicePackage() error {
 func (s *Server) generateCode(schemaPath string) error {
 	start := time.Now()
 	
-	// Check schema file exists
-	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
-		return fmt.Errorf("schema file not found: %s", schemaPath)
-	}
-	
-	// Read schema file
-	content, err := os.ReadFile(schemaPath)
-	if err != nil {
-		return fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
-	}
-	
-	if len(content) == 0 {
-		return fmt.Errorf("schema file is empty: %s", schemaPath)
-	}
-	
-	// Debug: log schema content
-	s.logger.Debug().
-		Str("path", schemaPath).
-		Str("content", string(content)).
-		Int("size", len(content)).
-		Msg("read schema file")
-
-	// Parse schema
-	parsedSchema, err := schema.ParseSchema(string(content))
-	if err != nil {
-		return fmt.Errorf("failed to parse schema: %w", err)
-	}
-	
-	// Debug: log services found
-	s.logger.Debug().
-		Int("service_count", len(parsedSchema.Services)).
-		Interface("services", parsedSchema.Services).
-		Msg("parsed schema services")
-	if len(parsedSchema.Services) == 0 {
-		s.logger.Warn().Msg("no services found in parsed schema")
-	}
-
-	// Get appropriate code generator
-	var generator codegen.Generator
-	switch s.config.Language {
-	case "go":
-		generator = golang.NewGenerator("types")
-	case "typescript":
-		generator = typescript.NewGenerator("service")
-	default:
-		return fmt.Errorf("unsupported language: %s", s.config.Language)
-	}
-
-	// Generate code
-	code, err := generator.Generate(parsedSchema)
-	if err != nil {
+	// Use the shared builder to generate code
+	if err := s.builder.GenerateCode(schemaPath); err != nil {
 		return fmt.Errorf("code generation failed: %w", err)
 	}
-
-	// Write generated interface file
-	var outputPath string
-	switch s.config.Language {
-	case "go":
-		// For Go, create types directory and write interface there
-		typesDir := filepath.Join(s.projectRoot, "types")
-		if err := os.MkdirAll(typesDir, 0755); err != nil {
-			return fmt.Errorf("failed to create types directory: %w", err)
-		}
-		outputPath = filepath.Join(typesDir, "interface.go")
-	case "typescript":
-		outputPath = filepath.Join(s.projectRoot, s.config.Source, "service.interface.ts")
-	default:
-		outputPath = filepath.Join(s.projectRoot, "service.interface"+generator.FileExtension())
-	}
 	
-	if err := os.WriteFile(outputPath, code, 0644); err != nil {
-		return fmt.Errorf("failed to write generated interface: %w", err)
-	}
-
-	fmt.Printf("📄 Generated %s in %v\n", filepath.Base(outputPath), time.Since(start))
-	
-	// Generate protobuf definitions
-	if err := s.generateProtobuf(parsedSchema); err != nil {
-		return fmt.Errorf("failed to generate protobuf: %w", err)
-	}
+	// The builder has already generated everything we need
+	fmt.Printf("📄 Generated code in %v\n", time.Since(start))
 	
 	return nil
 }
 
-// generateProtobuf generates protobuf definitions and compiles them with buf
-func (s *Server) generateProtobuf(parsedSchema *schema.Schema) error {
-	// Create .okra directory for temporary files
-	okraDir := filepath.Join(s.projectRoot, ".okra")
-	if err := os.MkdirAll(okraDir, 0755); err != nil {
-		return fmt.Errorf("failed to create .okra directory: %w", err)
-	}
-	
-	// Generate protobuf file using namespace from schema
-	namespace := parsedSchema.Meta.Namespace
-	if namespace == "" {
-		namespace = "service"
-	}
-	protoGen := protobuf.NewGenerator(namespace)
-	protoContent, err := protoGen.Generate(parsedSchema)
-	if err != nil {
-		return fmt.Errorf("failed to generate protobuf: %w", err)
-	}
-	
-	// Write protobuf file
-	protoPath := filepath.Join(okraDir, "service.proto")
-	if err := os.WriteFile(protoPath, []byte(protoContent), 0644); err != nil {
-		return fmt.Errorf("failed to write protobuf file: %w", err)
-	}
-	
-	// Check if buf is installed
-	if _, err := exec.LookPath("buf"); err != nil {
-		return fmt.Errorf("buf CLI is not installed. Please install it from https://buf.build/docs/installation")
-	}
-	
-	// Create buf.yaml if it doesn't exist
-	bufYamlPath := filepath.Join(okraDir, "buf.yaml")
-	bufYamlContent := `version: v1
-breaking:
-  use:
-    - FILE
-lint:
-  use:
-    - DEFAULT
-`
-	if err := os.WriteFile(bufYamlPath, []byte(bufYamlContent), 0644); err != nil {
-		return fmt.Errorf("failed to write buf.yaml: %w", err)
-	}
-	
-	// Compile protobuf to descriptor set
-	descPath := filepath.Join(okraDir, "service.pb.desc")
-	cmd := exec.Command("buf", "build", "--output", descPath, "--as-file-descriptor-set", protoPath)
-	cmd.Dir = okraDir
-	
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to compile protobuf with buf: %w\nOutput: %s", err, output)
-	}
-	
-	fmt.Printf("🔧 Generated protobuf descriptor: service.pb.desc\n")
-	return nil
-}
 
 // buildWASM compiles the source code to WASM
 func (s *Server) buildWASM() error {
 	start := time.Now()
-	s.logger.Debug().Str("language", s.config.Language).Msg("starting WASM build")
 	
-	// Ensure build directory exists
-	buildDir := filepath.Dir(filepath.Join(s.projectRoot, s.config.Build.Output))
-	s.logger.Debug().Str("build_dir", buildDir).Msg("ensuring build directory exists")
-	if err := os.MkdirAll(buildDir, 0755); err != nil {
-		return fmt.Errorf("failed to create build directory: %w", err)
+	// Use the shared builder to build WASM
+	if err := s.builder.BuildWASM(); err != nil {
+		return fmt.Errorf("WASM build failed: %w", err)
 	}
-
-	switch s.config.Language {
-	case "go":
-		// Parse schema first to get service methods
-		schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
-		schemaContent, err := os.ReadFile(schemaPath)
-		if err != nil {
-			return fmt.Errorf("failed to read schema: %w", err)
-		}
-		
-		// Debug: log schema content for WASM build
-		s.logger.Debug().
-			Str("path", schemaPath).
-			Str("content", string(schemaContent)).
-			Int("size", len(schemaContent)).
-			Msg("read schema file for WASM build")
-		
-		parsedSchema, err := schema.ParseSchema(string(schemaContent))
-		if err != nil {
-			return fmt.Errorf("failed to parse schema: %w", err)
-		}
-		
-		// Debug: log services found
-		s.logger.Debug().
-			Int("service_count", len(parsedSchema.Services)).
-			Interface("services", parsedSchema.Services).
-			Msg("parsed schema services in buildWASM")
-		if len(parsedSchema.Services) == 0 {
-			s.logger.Error().Msg("no services found in parsed schema for WASM build")
-		}
-		
-		// Use Go builder with hidden wrapper
-		builder := NewGoBuilder(s.config, s.projectRoot, parsedSchema)
-		if err := builder.Build(); err != nil {
-			return fmt.Errorf("Go build failed: %w", err)
-		}
-		
-		// Check output file was created
-		outputPath := filepath.Join(s.projectRoot, s.config.Build.Output)
-		if _, err := os.Stat(outputPath); err != nil {
-			return fmt.Errorf("build succeeded but output file not found: %w", err)
-		}
-		
-		fileInfo, _ := os.Stat(outputPath)
-		fmt.Printf("🏗️  Built %s (%d bytes) in %v\n", 
-			filepath.Base(outputPath), 
-			fileInfo.Size(), 
-			time.Since(start))
-		
-		return nil
-		
-	case "typescript":
-		// Parse schema first to get service methods
-		schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
-		schemaContent, err := os.ReadFile(schemaPath)
-		if err != nil {
-			return fmt.Errorf("failed to read schema: %w", err)
-		}
-		
-		parsedSchema, err := schema.ParseSchema(string(schemaContent))
-		if err != nil {
-			return fmt.Errorf("failed to parse schema: %w", err)
-		}
-		
-		// Use TypeScript builder
-		builder := NewTypeScriptBuilder(s.config, s.projectRoot, parsedSchema)
-		if err := builder.Build(); err != nil {
-			return fmt.Errorf("TypeScript build failed: %w", err)
-		}
-		
-		// Check output file was created
-		outputPath := filepath.Join(s.projectRoot, s.config.Build.Output)
-		if _, err := os.Stat(outputPath); err != nil {
-			return fmt.Errorf("build succeeded but output file not found: %w", err)
-		}
-		
-		fileInfo, _ := os.Stat(outputPath)
-		fmt.Printf("🏗️  Built %s (%d bytes) in %v\n", 
-			filepath.Base(outputPath), 
-			fileInfo.Size(), 
-			time.Since(start))
-		
-		return nil
-		
-	default:
-		return fmt.Errorf("unsupported language for WASM build: %s", s.config.Language)
+	
+	// Check output file was created
+	outputPath := filepath.Join(s.projectRoot, s.config.Build.Output)
+	if _, err := os.Stat(outputPath); err != nil {
+		return fmt.Errorf("build succeeded but output file not found: %w", err)
 	}
+	
+	fileInfo, _ := os.Stat(outputPath)
+	fmt.Printf("🏗️  Built %s (%d bytes) in %v\n", 
+		filepath.Base(outputPath), 
+		fileInfo.Size(), 
+		time.Since(start))
+	
+	return nil
 }

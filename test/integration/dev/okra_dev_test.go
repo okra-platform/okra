@@ -22,8 +22,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:embed testdata/*
+//go:embed testdata/okra.json testdata/service.okra.gql
 //go:embed testdata/service/*
+//go:embed testdata/types/*
+//go:embed testdata/build/.gitkeep
 var testServiceFiles embed.FS
 
 // TestOkraDev tests the full okra dev workflow
