@@ -21,8 +21,29 @@ Host APIs allow the OKRA runtime to expose system capabilities (e.g., state, log
 
 ---
 
+## Host Distribution
+
+Hosts are distributed via the OKRA registry system:
+
+- Published as `type: host` registry entries
+- Downloaded automatically by `okra dev` or `okra serve` based on `okra.json` configuration
+- Selected using `host` or `hostVersion` field in service's `okra.json`
+- Include platform-specific binaries (darwin-arm64, linux-amd64, etc.)
+- Contain a manifest describing available Host APIs and capabilities
+
+### Creating Custom Hosts
+
+To extend Host APIs:
+1. Create a new OKRA host project with `okra init:host` (future)
+2. Add custom Host API implementations
+3. Build and publish to a registry
+4. Reference in service `okra.json` via `host` or `hostVersion`
+
+---
+
 ## ✅ Summary
 
 - Host APIs are the bridge between the WASM sandbox and the OKRA runtime
 - Services opt into APIs via configuration (or operators provide policies to allow/prevent certain Host APIs)
 - Each API is versioned and registered at runtime
+- Hosts are distributed via registries for easy deployment and versioning
