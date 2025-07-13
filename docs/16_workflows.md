@@ -101,9 +101,13 @@ triggers:
 
   - type: signal
     signal: wake
+    
+  - type: schedule
+    cron: "0 0 * * *"  # Daily at midnight
+    timezone: "UTC"
 ```
 
-Triggering creates a new workflow instance, bound to input and version.
+Triggering creates a new workflow instance, bound to input and version. Scheduled triggers can be configured statically in the workflow definition or dynamically via the schedule host API.
 
 ---
 
@@ -146,6 +150,8 @@ Workflows are subject to Okra policies:
 - `okra graph` — visualizes flow
 - `okra who-calls billing.charge` — full dependency resolution
 - `okra test` — simulates workflow execution
+- `okra workflow status --id wf-123` — query instance status
+- `okra workflow list --status running` — list active workflows
 
 ---
 
@@ -157,6 +163,59 @@ The runtime ensures:
 - CEL expressions only access valid, typed bindings
 - Timeouts, retries, and signal waits are host-enforced
 - All execution is logged and observable
+
+---
+
+## 🔌 Programmatic Interaction
+
+Services interact with workflows through two host APIs:
+
+### Workflow Host API (`workflow.*`)
+
+Services can programmatically run workflows, send signals, and query status:
+
+```typescript
+// Run a workflow
+const instanceId = await workflow.run({
+  workflowId: "user.onboarding.v1",
+  input: { userId: "user-123", plan: "pro" }
+});
+
+// Send a signal to a waiting workflow
+await workflow.signal({
+  instanceId: instanceId,
+  signal: "activated",
+  payload: { activatedAt: new Date() }
+});
+
+// Query workflow status
+const status = await workflow.getStatus(instanceId);
+if (status.status === 'failed') {
+  // Handle failure
+}
+```
+
+### Schedule Host API (`schedule.*`)
+
+Services can schedule workflows to run at specific times or intervals:
+
+```typescript
+// Schedule a workflow to run daily
+await schedule.triggerWorkflow({
+  workflowId: "reports.daily.v1",
+  cronExpression: "0 0 * * *",
+  input: { reportType: "summary" }
+});
+
+// One-time scheduled workflow
+await schedule.triggerWorkflow({
+  workflowId: "user.followup.v1",
+  at: "2024-12-01T10:00:00Z",
+  input: { userId: "user-123" }
+});
+```
+
+See the [workflow host API](./host-apis/workflow.md) and [schedule host API](./host-apis/schedule.md) documentation for complete details.
 
 ---
 

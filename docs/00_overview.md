@@ -85,4 +85,74 @@ Each deployed module contains:
 - [101_testing-strategy.md](./101_testing-strategy.md) – Testing philosophy, strategy and conventions
 - [102_testing-best-practices.md](./102_testing-best-practices.md) – Best practices for approaching testing
 
+---
+
+## Implementation Details vs Developer Experience
+
+### What Developers See:
+- **Services with methods** - Define services using GraphQL IDL with decorators
+- **Type-safe service stubs** - Call remote services with full type safety
+- **Host APIs for capabilities** - Injected APIs for state, logging, HTTP, etc.
+- **Events for decoupled communication** - Emit and handle typed events
+- **Workflows for orchestration** - Declarative multi-service coordination
+
+### What's Hidden (Implementation Details):
+- **Actor model (GoAKT)** - Used internally for clustering, supervision, passivation
+- **Message passing between actors** - All RPC calls are actor messages internally
+- **WASM worker pool management** - Automatic scaling of WASM instances
+- **Internal routing and load balancing** - Handled by the actor system
+- **Service discovery** - Actor registry manages service locations
+
+**Important**: Developers never interact with actors directly. They write services with methods, and the runtime handles all distribution, scaling, and messaging transparently.
+
+---
+
+## WASM Constraints & Design Decisions
+
+Due to WebAssembly's single-threaded execution model, OKRA makes specific design choices:
+
+### WASM Limitations:
+- **No callbacks**: Methods must be explicitly exported by name
+- **No closures**: Cannot pass functions to host APIs
+- **Synchronous within instance**: Each WASM instance handles one request at a time
+- **No shared memory**: Instances are isolated from each other
+
+### How This Influences Our APIs:
+- **Scheduling references method names**, not callbacks
+  ```graphql
+  # ✅ Correct: References method by name
+  @scheduleOnly
+  dailyCleanup(): void
+  
+  # ❌ Not possible: No callback functions
+  schedule(() => cleanup())  
+  ```
+
+- **Events use declarative handlers**, not runtime subscriptions
+  ```graphql
+  # ✅ Correct: Declarative handler
+  @handles(event: "order.created")
+  onOrderCreated(event: OrderCreatedEvent): void
+  
+  # ❌ Not possible: Runtime subscription
+  events.subscribe("order.created", callback)
+  ```
+
+- **No timer callbacks** - Use scheduling or workflows for time-based operations
+  ```graphql
+  # ✅ Correct: Schedule a method
+  schedules:
+    - cron: "0 * * * *"
+      method: "hourlyTask"
+  
+  # ❌ Not possible: Timer with callback
+  setTimeout(() => doWork(), 1000)
+  ```
+
+### Why These Constraints Are Good:
+- **Predictable execution** - No callback hell or closure surprises
+- **Better for AI** - Clear patterns without dynamic behavior
+- **Easier debugging** - All code paths are statically analyzable
+- **Natural scaling** - Each instance is independent
+
 

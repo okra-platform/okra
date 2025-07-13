@@ -136,3 +136,66 @@ This hybrid approach ensures that critical security boundaries are always enforc
 - **"Programmable governance, declarative by default."**
 - **"Stop lateral movement and shadow privileges before they happen."**
 
+---
+
+## 🛡️ Middleware Governance
+
+While OKRA's decorator-based approach eliminates the need for most middleware, some system-wide concerns may require middleware at the host or transport layer. This is strictly governed:
+
+### Policy-Controlled Middleware
+
+Middleware is:
+- **Opt-in only** for specific system-wide use cases
+- **Policy-controlled** with explicit allowlists
+- **Restricted** to observability, telemetry, and security teams
+
+### Example Middleware Policy
+
+```yaml
+middleware-policies:
+  # Only these services can install middleware
+  allowedServices:
+    - "platform.audit-service"
+    - "platform.observability-pipeline"
+    - "security.request-validator"
+  
+  # Middleware can only intercept specific topics/methods
+  restrictToTopics:
+    - "*.audit"
+    - "*.metrics"
+    - "security.*"
+  
+  # Maximum middleware per service
+  maxMiddlewarePerService: 3
+  
+  # Middleware must declare capabilities
+  requiredDeclarations:
+    - purpose: "audit" | "security" | "observability"
+    - modifies: boolean  # Can it modify requests/responses?
+    - blocking: boolean  # Can it block requests?
+```
+
+### Why This Design Matters
+
+- **Prevents complexity creep**: No custom routers or switch-based dispatchers
+- **Maintains introspection**: Static analysis still possible
+- **Reduces hidden behavior**: All middleware is declared and visible
+- **Enables governance**: Security teams control middleware deployment
+
+### Potential Middleware Patterns
+
+1. **Audit Middleware**: Logs all requests matching patterns
+2. **Security Middleware**: Validates requests against dynamic rules
+3. **Observability Middleware**: Adds tracing spans and metrics
+4. **Circuit Breaker**: Protects services from cascading failures
+5. **Rate Limiter**: Global rate limiting across services
+
+### Future Directions
+
+The middleware system could evolve to support:
+- **Middleware marketplace**: Pre-approved middleware components
+- **Declarative middleware**: YAML/JSON configuration instead of code
+- **Middleware composition**: Chain multiple middleware with ordering
+- **Dynamic loading**: Hot-reload middleware without service restarts
+- **Middleware versioning**: Ensure compatibility across updates
+
