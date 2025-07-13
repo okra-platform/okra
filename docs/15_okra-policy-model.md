@@ -71,15 +71,34 @@ This allows dynamic policies that adapt to runtime context.
 
 ## 🛡️ Defense-in-Depth Strategy
 
+### Hybrid Policy Enforcement Model
+
+Okra employs a **hybrid approach** to policy enforcement, combining code-level security checks with flexible CEL-based policies:
+
+1. **Code-Level Policies** (Implemented in Host API code)
+   - Security-critical validations that should never be bypassed
+   - Performance-sensitive checks (e.g., size limits, format validation)
+   - Protection against malformed requests and injection attacks
+   - Examples: maximum payload sizes, valid parameter ranges, input sanitization
+
+2. **CEL-Based Policies** (Configured via Registry)
+   - Business logic and access control rules
+   - Environment-specific configurations
+   - Dynamic conditions based on runtime context
+   - Examples: allowed domains, rate limits, feature flags
+
+This hybrid approach ensures that critical security boundaries are always enforced while maintaining flexibility for business rules.
+
 ### Zero-Trust Posture
 
-| Layer              | Enforced By     | Description                                    |
-| ------------------ | --------------- | ---------------------------------------------- |
-| Service Identity   | WorkOS + Host   | Strong authN with scoped claims                |
-| Host API Surface   | Host Config     | Only a subset of APIs are injected             |
-| Policy Engine      | Registry + Host | What APIs can be used, how, and by whom        |
-| Runtime Conditions | CEL             | Dynamic rules based on environment or identity |
-| Approval Workflow  | Registry + UI   | Human-in-the-loop policy creation              |
+| Layer              | Enforced By        | Description                                           |
+| ------------------ | ------------------ | ----------------------------------------------------- |
+| Service Identity   | WorkOS + Host      | Strong authN with scoped claims                       |
+| Host API Surface   | Host Config        | Only a subset of APIs are injected                    |
+| Code-Level Policy  | Host API Code      | Critical security checks (sizes, formats, injection)  |
+| CEL-Based Policy   | Registry + Host    | Business rules, access control, dynamic conditions    |
+| Runtime Conditions | CEL                | Dynamic rules based on environment or identity        |
+| Approval Workflow  | Registry + UI      | Human-in-the-loop policy creation                     |
 
 ---
 

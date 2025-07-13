@@ -10,6 +10,24 @@ Host APIs allow the OKRA runtime to expose system capabilities (e.g., state, log
 - Each API is exposed as a named host function (or set of functions)
 - Only explicitly declared APIs are injected per service, based on config
 
+### Hybrid Policy Enforcement
+
+OKRA uses a **hybrid approach** to policy enforcement for Host APIs:
+
+1. **Code-Level Policies** (Built into Host API implementations)
+   - Critical security validations (e.g., maximum payload sizes, input sanitization)
+   - Performance-critical checks that run on every call
+   - Protection against system-level threats (memory exhaustion, injection attacks)
+   - These policies are always enforced and cannot be disabled
+
+2. **CEL-Based Policies** (Configured via Registry)
+   - Business logic and access control rules
+   - Environment-specific configurations
+   - Dynamic conditions based on runtime context
+   - Can be updated without redeploying services
+
+This ensures that security boundaries are always maintained while allowing flexible business rules.
+
 ---
 
 ## Common Host APIs

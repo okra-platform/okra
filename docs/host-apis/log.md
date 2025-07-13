@@ -39,9 +39,22 @@ interface LogHostAPIConfig {
 
 ## Enforceable Okra Policies
 
-Policies allow fine-grained control over what logs can be emitted.
+OKRA uses a hybrid approach to policy enforcement, combining code-level security checks with flexible CEL-based policies.
 
-### Examples:
+### Code-Level Policies (Always Enforced)
+
+These policies are implemented directly in the host API code for security and performance:
+
+1. **Maximum message size** - Prevent memory exhaustion (default: 1MB)
+2. **Valid log levels** - Only accept 'debug', 'info', 'warn', 'error'
+3. **Log injection prevention** - Sanitize control characters in messages
+4. **Maximum context depth** - Prevent deeply nested objects (default: 5 levels)
+5. **Maximum context keys** - Limit number of context fields (default: 100)
+6. **Valid timestamp format** - Ensure ISO 8601 compliance if provided
+
+### CEL-Based Policies (Dynamic/Configurable)
+
+These policies can be configured and updated at runtime:
 
 #### 1. **Level restriction**
 
@@ -49,22 +62,46 @@ Policies allow fine-grained control over what logs can be emitted.
 "policy.log.write.allowedLevels": ["info", "warn", "error"]
 ```
 
-#### 2. **CEL-based context filtering**
+#### 2. **Conditional logging based on context**
 
 ```json
 "policy.log.write.condition": "entry.level != 'debug' || request.auth.claims.role == 'admin'"
 ```
 
-#### 3. **Max size per message**
+#### 3. **Environment-based filtering**
+
+```json
+"policy.log.write.condition": "env.DEPLOYMENT_ENV == 'production' ? entry.level != 'debug' : true"
+```
+
+#### 4. **Required context fields**
+
+```json
+"policy.log.write.requiredContextKeys": ["requestId", "component"]
+```
+
+#### 5. **Field redaction patterns**
+
+```json
+"policy.log.write.redactFields": ["context.password", "context.apiKey", "context.*.token"]
+```
+
+#### 6. **Rate limiting**
+
+```json
+"policy.log.write.rateLimit": "100/minute"
+```
+
+#### 7. **Size limits (within code-enforced maximum)**
 
 ```json
 "policy.log.write.maxEntrySizeKb": 10
 ```
 
-#### 4. **Audit required fields**
+#### 8. **Sensitive data patterns**
 
 ```json
-"policy.log.write.requiredContextKeys": ["requestId", "component"]
+"policy.log.write.sensitivePatterns": ["\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"]
 ```
 
 ---

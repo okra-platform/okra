@@ -29,9 +29,20 @@ interface EnvHostAPIConfig {
 
 ## Enforceable Okra Policies
 
-Policies can constrain which environment keys are accessible.
+OKRA uses a hybrid approach to policy enforcement, combining code-level security checks with flexible CEL-based policies.
 
-### Examples:
+### Code-Level Policies (Always Enforced)
+
+These policies are implemented directly in the host API code for security and performance:
+
+1. **Key name validation** - Only alphanumeric, underscore, and dash characters
+2. **Maximum key length** - Prevent excessive memory usage (default: 256 characters)
+3. **Reserved key prevention** - Block access to host-internal keys (e.g., `OKRA_*`, `HOST_*`)
+4. **Null byte protection** - Prevent injection via key names
+
+### CEL-Based Policies (Dynamic/Configurable)
+
+These policies can be configured and updated at runtime:
 
 #### 1. **Allowlist of keys**
 
@@ -42,13 +53,33 @@ Policies can constrain which environment keys are accessible.
 #### 2. **Deny access to specific keys**
 
 ```json
-"policy.env.get.blockedKeys": ["INTERNAL_DEBUG_FLAG"]
+"policy.env.get.blockedKeys": ["INTERNAL_DEBUG_FLAG", "LEGACY_*"]
 ```
 
-#### 3. **Conditional access**
+#### 3. **Conditional access based on role**
 
 ```json
-"policy.env.get.condition": "request.auth.claims.role == 'admin' || request.key != 'DEBUG_MODE'"
+"policy.env.get.condition": "request.auth.claims.role == 'admin' || !request.key.startsWith('DEBUG_')"
+```
+
+#### 4. **Environment-specific restrictions**
+
+```json
+"policy.env.get.condition": "env.DEPLOYMENT_ENV == 'production' ? request.key in ['MODE', 'REGION'] : true"
+```
+
+#### 5. **Service-scoped access**
+
+```json
+"policy.env.get.scopedAccess": true,
+"policy.env.get.keyPrefix": "SERVICE_${service.namespace}_${service.name}_"
+```
+
+#### 6. **Pattern-based allow/deny**
+
+```json
+"policy.env.get.allowedPatterns": ["^CONFIG_.*", "^FEATURE_.*"],
+"policy.env.get.deniedPatterns": [".*_SECRET$", ".*_PASSWORD$"]
 ```
 
 ---
