@@ -1,0 +1,17 @@
+{
+  "features": {
+    "some-feature": {
+      "design_date": "2024-01-10",
+      "design_doc": "docs/design/2024-01-10-some-feature.md",
+      "status": "implemented",
+      "implementation_date": "2024-01-13",
+      "branch": "main",
+      "files": [
+        "internal/hostapi/",
+        "internal/hostapi/impl/"
+      ],
+      "tests_passing": true
+    }
+  },
+  "_instructions": "This file tracks feature implementation status. Update when: 1) Creating a design doc, 2) Starting implementation, 3) Completing implementation, 4) Merging to main"
+}
