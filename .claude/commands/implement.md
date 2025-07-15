@@ -15,10 +15,14 @@ If the user does not provide a feature:
 
 When implementing a feature:
 
-1. First, locate and read the design document:
-   - Check .claude/feature-status.json for the exact design doc path
-   - If not found there, look for docs/design/*-<feature-name>.md
-   - Read the design document thoroughly
+1. **FIRST, before anything else:**
+   - Read all the docs in the docs/* dir to get a high-level view of the system (recursively)
+   - Locate and read the design document:
+     - Check .claude/feature-status.json for the exact design doc path
+     - If not found there, look for docs/design/*-<feature-name>.md
+     - Read the design document thoroughly
+   - Read any existing code relevant to the feature implementation
+   - Only after understanding the system context and design, proceed with the following steps
 
 2. Present your implementation plan to the user:
    ```
@@ -43,7 +47,6 @@ When implementing a feature:
 3. Wait for user confirmation or clarification
 
 4. Once confirmed, implement the feature by:
-   - Reading all the docs in the docs dir to get a high-level view of the system
    - Update .claude/feature-status.json to mark the feature as "in-progress" with today's date
    - Creating a new git branch called feature/<feature-name>
    - Implementing the feature according to the design document
