@@ -29,7 +29,7 @@ require (
 
 		builder := &GoBuilder{projectRoot: tmpDir}
 		modulePath, err := builder.extractModulePath()
-		
+
 		require.NoError(t, err)
 		assert.Equal(t, "github.com/test/myapp", modulePath)
 	})
@@ -46,7 +46,7 @@ go 1.21
 
 		builder := &GoBuilder{projectRoot: tmpDir}
 		modulePath, err := builder.extractModulePath()
-		
+
 		require.NoError(t, err)
 		assert.Equal(t, "github.com/test/myapp", modulePath)
 	})
@@ -55,7 +55,7 @@ go 1.21
 	t.Run("missing go.mod", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		builder := &GoBuilder{projectRoot: tmpDir}
-		
+
 		_, err := builder.extractModulePath()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to open go.mod")
@@ -75,7 +75,7 @@ require (
 
 		builder := &GoBuilder{projectRoot: tmpDir}
 		_, err := builder.extractModulePath()
-		
+
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "module declaration not found")
 	})
@@ -111,23 +111,23 @@ func TestGoBuilder_generateWrapper(t *testing.T) {
 		// Read and verify content
 		content, err := os.ReadFile(wrapperPath)
 		require.NoError(t, err)
-		
+
 		contentStr := string(content)
 		// Check imports
 		assert.Contains(t, contentStr, `userservice "github.com/test/myapp"`)
 		assert.Contains(t, contentStr, `"github.com/test/myapp/types"`)
-		
+
 		// Check service interface
 		assert.Contains(t, contentStr, "var service types.MathService")
-		
+
 		// Check constructor call
 		assert.Contains(t, contentStr, "service = userservice.NewService()")
-		
+
 		// Check method dispatch
 		assert.Contains(t, contentStr, `case "add":`)
 		assert.Contains(t, contentStr, "var req types.AddInput")
 		assert.Contains(t, contentStr, "res, err := service.Add(&req)")
-		
+
 		// Check WASI exports
 		assert.Contains(t, contentStr, "//export _initialize")
 		assert.Contains(t, contentStr, "//export handle_request")
@@ -169,13 +169,13 @@ func TestGoBuilder_generateWrapper(t *testing.T) {
 
 		content, err := os.ReadFile(filepath.Join(tmpDir, "main.go"))
 		require.NoError(t, err)
-		
+
 		contentStr := string(content)
 		// Check all methods are present
 		assert.Contains(t, contentStr, `case "createUser":`)
 		assert.Contains(t, contentStr, `case "getUser":`)
 		assert.Contains(t, contentStr, `case "deleteUser":`)
-		
+
 		// Check method calls
 		assert.Contains(t, contentStr, "service.CreateUser(&req)")
 		assert.Contains(t, contentStr, "service.GetUser(&req)")
@@ -191,7 +191,7 @@ func TestGoBuilder_generateWrapper(t *testing.T) {
 
 		builder := &GoBuilder{schema: s}
 		err := builder.generateWrapper(tmpDir, "github.com/test/myapp", "github.com/test/myapp")
-		
+
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no services found in schema")
 	})
@@ -211,7 +211,7 @@ require (
 )`
 		err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte(userGoModContent), 0644)
 		require.NoError(t, err)
-		
+
 		tmpDir := t.TempDir()
 		builder := &GoBuilder{projectRoot: projectRoot}
 		err = builder.createTempGoMod(tmpDir, "github.com/test/myapp")
@@ -222,7 +222,7 @@ require (
 
 		content, err := os.ReadFile(goModPath)
 		require.NoError(t, err)
-		
+
 		contentStr := string(content)
 		assert.Contains(t, contentStr, "module okra-temp-build")
 		assert.Contains(t, contentStr, "go 1.22") // Should use version from user's go.mod
@@ -326,7 +326,7 @@ func TestGoBuilder_copyFile(t *testing.T) {
 		tmpDir := t.TempDir()
 		srcPath := filepath.Join(tmpDir, "source.txt")
 		dstPath := filepath.Join(tmpDir, "dest", "target.txt")
-		
+
 		content := []byte("test content")
 		require.NoError(t, os.WriteFile(srcPath, content, 0644))
 
@@ -349,7 +349,7 @@ func TestGoBuilder_copyFile(t *testing.T) {
 
 		builder := &GoBuilder{}
 		err := builder.copyFile(srcPath, dstPath)
-		
+
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to read source file")
 	})
@@ -364,11 +364,11 @@ func TestGoBuilder_Build_Integration(t *testing.T) {
 	// Test: Full build process
 	t.Run("complete build", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		
+
 		// Create project structure
 		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "src"), 0755))
 		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "types"), 0755))
-		
+
 		// Create go.mod
 		goModContent := `module github.com/test/myservice
 
@@ -451,12 +451,12 @@ func (s *mathService) Add(input *types.AddInput) (*types.AddOutput, error) {
 		// Run builder
 		builder := NewGoBuilder(cfg, tmpDir, s)
 		err := builder.Build()
-		
+
 		// Note: This might fail if TinyGo is not installed or configured
 		if err != nil && strings.Contains(err.Error(), "tinygo") {
 			t.Skip("TinyGo build failed, likely not configured")
 		}
-		
+
 		require.NoError(t, err)
 
 		// Check output exists

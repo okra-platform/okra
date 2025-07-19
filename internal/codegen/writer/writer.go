@@ -7,11 +7,11 @@ import (
 
 // Writer provides utilities for generating formatted code with proper indentation
 type Writer struct {
-	sb              strings.Builder
-	indentLevel     int
-	indentString    string
-	linePrefix      string
-	needsIndent     bool
+	sb           strings.Builder
+	indentLevel  int
+	indentString string
+	linePrefix   string
+	needsIndent  bool
 }
 
 // NewWriter creates a new code writer with specified indentation string

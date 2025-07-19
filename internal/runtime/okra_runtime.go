@@ -13,14 +13,14 @@ import (
 type OkraRuntime struct {
 	// actorSystem is the GoAKT actor system
 	actorSystem actors.ActorSystem
-	
+
 	// deployedActors tracks deployed service actors
 	deployedActors map[string]*actors.PID
 	mu             sync.RWMutex
-	
+
 	// logger for runtime operations
 	logger zerolog.Logger
-	
+
 	// started indicates if the runtime has been started
 	started bool
 }
@@ -38,26 +38,26 @@ func NewOkraRuntime(logger zerolog.Logger) *OkraRuntime {
 func (r *OkraRuntime) Start(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if r.started {
 		return fmt.Errorf("runtime already started")
 	}
-	
+
 	// Create actor system
 	// Note: GoAKT uses its default logger. We track operations separately with zerolog
 	actorSystem, err := actors.NewActorSystem("okra-runtime")
 	if err != nil {
 		return fmt.Errorf("failed to create actor system: %w", err)
 	}
-	
+
 	// Start the actor system
 	if err := actorSystem.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start actor system: %w", err)
 	}
-	
+
 	r.actorSystem = actorSystem
 	r.started = true
-	
+
 	r.logger.Info().Msg("runtime started successfully")
 	return nil
 }
@@ -66,41 +66,41 @@ func (r *OkraRuntime) Start(ctx context.Context) error {
 func (r *OkraRuntime) Deploy(ctx context.Context, pkg *ServicePackage) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if !r.started {
 		return "", fmt.Errorf("runtime not started")
 	}
-	
+
 	if pkg == nil {
 		return "", fmt.Errorf("service package cannot be nil")
 	}
-	
+
 	// Generate actor ID from service package
 	// Format: namespace.service.version
 	actorID := r.generateActorID(pkg)
-	
+
 	// Check if already deployed
 	if _, exists := r.deployedActors[actorID]; exists {
 		return "", fmt.Errorf("service %s already deployed", actorID)
 	}
-	
+
 	// Create WASM actor
 	actor := NewWASMActor(pkg)
-	
+
 	// Spawn the actor
 	pid, err := r.actorSystem.Spawn(ctx, actorID, actor)
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn actor %s: %w", actorID, err)
 	}
-	
+
 	// Track deployed actor
 	r.deployedActors[actorID] = pid
-	
+
 	r.logger.Info().
 		Str("actor_id", actorID).
 		Str("service", pkg.ServiceName).
 		Msg("service deployed successfully")
-	
+
 	return actorID, nil
 }
 
@@ -108,28 +108,28 @@ func (r *OkraRuntime) Deploy(ctx context.Context, pkg *ServicePackage) (string, 
 func (r *OkraRuntime) Undeploy(ctx context.Context, actorID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if !r.started {
 		return fmt.Errorf("runtime not started")
 	}
-	
+
 	pid, exists := r.deployedActors[actorID]
 	if !exists {
 		return fmt.Errorf("service %s not deployed", actorID)
 	}
-	
+
 	// Shutdown the actor
 	if err := pid.Shutdown(ctx); err != nil {
 		return fmt.Errorf("failed to shutdown actor %s: %w", actorID, err)
 	}
-	
+
 	// Remove from tracking
 	delete(r.deployedActors, actorID)
-	
+
 	r.logger.Info().
 		Str("actor_id", actorID).
 		Msg("service undeployed successfully")
-	
+
 	return nil
 }
 
@@ -137,7 +137,7 @@ func (r *OkraRuntime) Undeploy(ctx context.Context, actorID string) error {
 func (r *OkraRuntime) IsDeployed(actorID string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	_, exists := r.deployedActors[actorID]
 	return exists
 }
@@ -146,21 +146,21 @@ func (r *OkraRuntime) IsDeployed(actorID string) bool {
 func (r *OkraRuntime) Shutdown(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	if !r.started {
 		return fmt.Errorf("runtime not started")
 	}
-	
+
 	// Log shutdown initiation
 	r.logger.Info().
 		Int("deployed_actors", len(r.deployedActors)).
 		Msg("shutting down runtime")
-	
+
 	// Shutdown all deployed actors first
 	var shutdownErrors []error
 	for actorID, pid := range r.deployedActors {
 		if err := pid.Shutdown(ctx); err != nil {
-			shutdownErrors = append(shutdownErrors, 
+			shutdownErrors = append(shutdownErrors,
 				fmt.Errorf("failed to shutdown actor %s: %w", actorID, err))
 			r.logger.Error().
 				Err(err).
@@ -168,23 +168,23 @@ func (r *OkraRuntime) Shutdown(ctx context.Context) error {
 				Msg("failed to shutdown actor")
 		}
 	}
-	
+
 	// Clear deployed actors
 	r.deployedActors = make(map[string]*actors.PID)
-	
+
 	// Stop the actor system
 	if err := r.actorSystem.Stop(ctx); err != nil {
 		return fmt.Errorf("failed to stop actor system: %w", err)
 	}
-	
+
 	r.started = false
 	r.logger.Info().Msg("runtime shutdown complete")
-	
+
 	// Return first error if any occurred during actor shutdown
 	if len(shutdownErrors) > 0 {
 		return shutdownErrors[0]
 	}
-	
+
 	return nil
 }
 
@@ -199,13 +199,13 @@ func (r *OkraRuntime) generateActorID(pkg *ServicePackage) string {
 	if pkg.Schema != nil && pkg.Schema.Meta.Namespace != "" {
 		namespace = pkg.Schema.Meta.Namespace
 	}
-	
+
 	// Extract version from schema metadata
 	version := "v1"
 	if pkg.Schema != nil && pkg.Schema.Meta.Version != "" {
 		version = pkg.Schema.Meta.Version
 	}
-	
+
 	// Format: namespace.service.version
 	return fmt.Sprintf("%s.%s.%s", namespace, pkg.ServiceName, version)
 }
@@ -214,7 +214,7 @@ func (r *OkraRuntime) generateActorID(pkg *ServicePackage) string {
 func (o *OkraRuntime) GetActorPID(actorID string) *actors.PID {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	
+
 	if pid, exists := o.deployedActors[actorID]; exists {
 		return pid
 	}

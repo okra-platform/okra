@@ -25,35 +25,35 @@ import (
 
 func TestNewPackager(t *testing.T) {
 	// Test: NewPackager creates packager with config
-	
+
 	cfg := &config.Config{
 		Name:    "test-service",
 		Version: "1.0.0",
 	}
-	
+
 	packager := NewPackager(cfg)
-	
+
 	assert.NotNil(t, packager)
 	assert.Equal(t, cfg, packager.config)
 }
 
 func TestPackager_CreatePackage(t *testing.T) {
 	// Test: CreatePackage creates a valid .pkg file
-	
+
 	tempDir := t.TempDir()
-	
+
 	// Create test WASM file
 	wasmPath := filepath.Join(tempDir, "service.wasm")
 	wasmContent := []byte("fake wasm content")
 	err := os.WriteFile(wasmPath, wasmContent, 0644)
 	require.NoError(t, err)
-	
+
 	// Create test protobuf descriptor
 	pbPath := filepath.Join(tempDir, "service.pb.desc")
 	pbContent := []byte("fake protobuf descriptor")
 	err = os.WriteFile(pbPath, pbContent, 0644)
 	require.NoError(t, err)
-	
+
 	// Create artifacts
 	artifacts := &BuildArtifacts{
 		WASMPath:               wasmPath,
@@ -83,7 +83,7 @@ func TestPackager_CreatePackage(t *testing.T) {
 			Language:  "go",
 		},
 	}
-	
+
 	// Create packager
 	cfg := &config.Config{
 		Name:     "test-service",
@@ -91,16 +91,16 @@ func TestPackager_CreatePackage(t *testing.T) {
 		Language: "go",
 	}
 	packager := NewPackager(cfg)
-	
+
 	// Create package
 	packagePath := filepath.Join(tempDir, "test.pkg")
 	err = packager.CreatePackage(artifacts, packagePath)
 	require.NoError(t, err)
-	
+
 	// Verify package exists
 	_, err = os.Stat(packagePath)
 	assert.NoError(t, err)
-	
+
 	// Verify package contents
 	verifyPackageContents(t, packagePath, []string{
 		"service.wasm",
@@ -115,28 +115,28 @@ func verifyPackageContents(t *testing.T, packagePath string, expectedFiles []str
 	file, err := os.Open(packagePath)
 	require.NoError(t, err)
 	defer file.Close()
-	
+
 	gzReader, err := gzip.NewReader(file)
 	require.NoError(t, err)
 	defer gzReader.Close()
-	
+
 	tarReader := tar.NewReader(gzReader)
-	
+
 	foundFiles := make(map[string]bool)
-	
+
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
 			break
 		}
 		require.NoError(t, err)
-		
+
 		foundFiles[header.Name] = true
-		
+
 		// Verify file has content
 		assert.Greater(t, header.Size, int64(0), "file %s should have content", header.Name)
 	}
-	
+
 	// Verify all expected files are present
 	for _, expectedFile := range expectedFiles {
 		assert.True(t, foundFiles[expectedFile], "expected file %s not found in package", expectedFile)

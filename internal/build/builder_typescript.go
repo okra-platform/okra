@@ -17,20 +17,20 @@ func (b *ServiceBuilder) buildTypeScriptWASM() error {
 	if err := builder.Build(); err != nil {
 		return fmt.Errorf("TypeScript build failed: %w", err)
 	}
-	
+
 	// Check output file was created
 	outputPath := filepath.Join(b.projectRoot, b.config.Build.Output)
 	if _, err := os.Stat(outputPath); err != nil {
 		return fmt.Errorf("build succeeded but output file not found: %w", err)
 	}
-	
+
 	fileInfo, _ := os.Stat(outputPath)
 	b.logger.Info().
 		Str("output", filepath.Base(outputPath)).
 		Int64("size", fileInfo.Size()).
 		Dur("duration", time.Since(b.buildStart)).
 		Msg("WASM build completed")
-	
+
 	return nil
 }
 
@@ -54,11 +54,11 @@ func (b *ServiceBuilder) generateTypeScriptInterface(parsedSchema *schema.Schema
 	if err := os.WriteFile(interfacePath, []byte(code), 0644); err != nil {
 		return fmt.Errorf("failed to write interface file: %w", err)
 	}
-	
+
 	b.logger.Info().
 		Str("path", interfacePath).
 		Dur("duration", time.Since(b.buildStart)).
 		Msg("generated interface code")
-	
+
 	return nil
 }

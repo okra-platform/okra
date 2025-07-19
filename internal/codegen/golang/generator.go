@@ -37,7 +37,7 @@ func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
 	if g.packageName == "" {
 		g.packageName = "types"
 	}
-	
+
 	w := writer.NewWriter("\t")
 
 	// Write package declaration
@@ -79,7 +79,6 @@ func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
 
 	return w.Bytes(), nil
 }
-
 
 // collectImports analyzes the schema and collects required imports
 func (g *Generator) collectImports(s *schema.Schema) {
@@ -292,4 +291,3 @@ func (g *Generator) exportedName(name string) string {
 	// In production, might want to handle snake_case, etc.
 	return strings.ToUpper(name[:1]) + name[1:]
 }
-

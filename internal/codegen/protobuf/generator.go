@@ -59,10 +59,10 @@ func (g *Generator) generateEnum(buf *bytes.Buffer, enum *schema.EnumType) {
 		buf.WriteString(fmt.Sprintf("// %s\n", enum.Doc))
 	}
 	buf.WriteString(fmt.Sprintf("enum %s {\n", enum.Name))
-	
+
 	// Protobuf requires first enum value to be 0
 	buf.WriteString(fmt.Sprintf("  %s_UNSPECIFIED = 0;\n", strings.ToUpper(enum.Name)))
-	
+
 	for i, value := range enum.Values {
 		if value.Doc != "" {
 			buf.WriteString(fmt.Sprintf("  // %s\n", value.Doc))
@@ -78,15 +78,15 @@ func (g *Generator) generateMessage(buf *bytes.Buffer, typ *schema.ObjectType) {
 		buf.WriteString(fmt.Sprintf("// %s\n", typ.Doc))
 	}
 	buf.WriteString(fmt.Sprintf("message %s {\n", typ.Name))
-	
+
 	for i, field := range typ.Fields {
 		if field.Doc != "" {
 			buf.WriteString(fmt.Sprintf("  // %s\n", field.Doc))
 		}
-		
+
 		protoType := g.mapToProtoType(field.Type)
 		fieldNum := i + 1
-		
+
 		// Check if field type is a list (ends with [])
 		isList := strings.HasSuffix(field.Type, "[]")
 		if isList {
@@ -108,12 +108,12 @@ func (g *Generator) generateService(buf *bytes.Buffer, service *schema.Service) 
 		buf.WriteString(fmt.Sprintf("// %s\n", service.Doc))
 	}
 	buf.WriteString(fmt.Sprintf("service %s {\n", service.Name))
-	
+
 	for _, method := range service.Methods {
 		if method.Doc != "" {
 			buf.WriteString(fmt.Sprintf("  // %s\n", method.Doc))
 		}
-		buf.WriteString(fmt.Sprintf("  rpc %s(%s) returns (%s);\n", 
+		buf.WriteString(fmt.Sprintf("  rpc %s(%s) returns (%s);\n",
 			method.Name, method.InputType, method.OutputType))
 	}
 	buf.WriteString("}\n\n")

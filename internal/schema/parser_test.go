@@ -73,7 +73,7 @@ type Post {
 	// Test: Post type with list field
 	postType := schema.Types[1]
 	assert.Equal(t, "Post", postType.Name)
-	
+
 	// Check tags field (list type)
 	tagsField := postType.Fields[4]
 	assert.Equal(t, "tags", tagsField.Name)
@@ -140,7 +140,7 @@ service UserService {
 
 	// Test: Check service
 	assert.Len(t, schema.Services, 1)
-	
+
 	service := schema.Services[0]
 	assert.Equal(t, "UserService", service.Name)
 	assert.Len(t, service.Methods, 2)
@@ -237,16 +237,16 @@ service UserService {
 	// Verify complete structure
 	assert.Equal(t, "auth.users", schema.Meta.Namespace)
 	assert.Equal(t, "v1", schema.Meta.Version)
-	
-	assert.Len(t, schema.Types, 2) // CreateUser, CreateUserResponse
-	assert.Len(t, schema.Enums, 1) // UserRole
+
+	assert.Len(t, schema.Types, 2)    // CreateUser, CreateUserResponse
+	assert.Len(t, schema.Enums, 1)    // UserRole
 	assert.Len(t, schema.Services, 1) // UserService
 
 	// Check CreateUser type with validations
 	createUserType := schema.Types[0]
 	assert.Equal(t, "CreateUser", createUserType.Name)
 	assert.Len(t, createUserType.Fields, 3)
-	
+
 	// Verify field validations
 	nameField := createUserType.Fields[0]
 	assert.Equal(t, "name", nameField.Name)
@@ -259,7 +259,7 @@ service UserService {
 	method := service.Methods[0]
 	assert.Equal(t, "createUser", method.Name)
 	assert.Len(t, method.Directives, 3)
-	
+
 	// Verify idempotent directive
 	idempotentDir := method.Directives[2]
 	assert.Equal(t, "idempotent", idempotentDir.Name)
@@ -290,14 +290,14 @@ service ProductService {
 	require.NotNil(t, schema)
 
 	assert.Len(t, schema.Services, 3)
-	
+
 	// Verify service names and method counts
 	assert.Equal(t, "UserService", schema.Services[0].Name)
 	assert.Len(t, schema.Services[0].Methods, 1)
-	
+
 	assert.Equal(t, "OrderService", schema.Services[1].Name)
 	assert.Len(t, schema.Services[1].Methods, 2)
-	
+
 	assert.Equal(t, "ProductService", schema.Services[2].Name)
 	assert.Len(t, schema.Services[2].Methods, 1)
 }

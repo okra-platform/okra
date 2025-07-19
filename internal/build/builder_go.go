@@ -19,20 +19,20 @@ func (b *ServiceBuilder) buildGoWASM() error {
 	if err := builder.Build(); err != nil {
 		return fmt.Errorf("Go build failed: %w", err)
 	}
-	
+
 	// Check output file was created
 	outputPath := filepath.Join(b.projectRoot, b.config.Build.Output)
 	if _, err := os.Stat(outputPath); err != nil {
 		return fmt.Errorf("build succeeded but output file not found: %w", err)
 	}
-	
+
 	fileInfo, _ := os.Stat(outputPath)
 	b.logger.Info().
 		Str("output", filepath.Base(outputPath)).
 		Int64("size", fileInfo.Size()).
 		Dur("duration", time.Since(b.buildStart)).
 		Msg("WASM build completed")
-	
+
 	return nil
 }
 
@@ -41,7 +41,7 @@ func (b *ServiceBuilder) generateLanguageInterface(parsedSchema *schema.Schema) 
 	if b.config.Language != "go" {
 		return b.generateTypeScriptInterface(parsedSchema)
 	}
-	
+
 	// Create types directory
 	typesDir := filepath.Join(b.projectRoot, "types")
 	if err := os.MkdirAll(typesDir, 0755); err != nil {
@@ -60,12 +60,12 @@ func (b *ServiceBuilder) generateLanguageInterface(parsedSchema *schema.Schema) 
 	if err := os.WriteFile(interfacePath, []byte(code), 0644); err != nil {
 		return fmt.Errorf("failed to write interface file: %w", err)
 	}
-	
+
 	b.logger.Info().
 		Str("path", interfacePath).
 		Dur("duration", time.Since(b.buildStart)).
 		Msg("generated interface code")
-	
+
 	return nil
 }
 
@@ -80,25 +80,25 @@ func (b *ServiceBuilder) generateProtobufDescriptor(parsedSchema *schema.Schema)
 	b.logger.Debug().
 		Str("namespace", namespace).
 		Msg("generating protobuf with namespace")
-	
+
 	// Generate protobuf using the existing generator
 	protoGen := protobuf.NewGenerator(namespace)
 	protoContent, err := protoGen.Generate(parsedSchema)
 	if err != nil {
 		return fmt.Errorf("failed to generate protobuf: %w", err)
 	}
-	
+
 	// Write protobuf file
 	protoPath := filepath.Join(b.okraDir, "service.proto")
 	if err := os.WriteFile(protoPath, []byte(protoContent), 0644); err != nil {
 		return fmt.Errorf("failed to write protobuf file: %w", err)
 	}
-	
+
 	// Check if buf is installed
 	if _, err := exec.LookPath("buf"); err != nil {
 		return fmt.Errorf("buf CLI is not installed. Please install it from https://buf.build/docs/installation")
 	}
-	
+
 	// Create buf.yaml if it doesn't exist
 	bufYamlPath := filepath.Join(b.okraDir, "buf.yaml")
 	bufYamlContent := `version: v1
@@ -112,19 +112,19 @@ lint:
 	if err := os.WriteFile(bufYamlPath, []byte(bufYamlContent), 0644); err != nil {
 		return fmt.Errorf("failed to write buf.yaml: %w", err)
 	}
-	
+
 	// Compile protobuf to descriptor set
 	descPath := filepath.Join(b.okraDir, "service.pb.desc")
 	cmd := exec.Command("buf", "build", "--output", descPath, "--as-file-descriptor-set", protoPath)
 	cmd.Dir = b.okraDir
-	
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to compile protobuf with buf: %w\nOutput: %s", err, output)
 	}
-	
+
 	b.logger.Info().
 		Str("descriptor", "service.pb.desc").
 		Msg("generated protobuf descriptor")
-	
+
 	return nil
 }

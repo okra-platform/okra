@@ -80,7 +80,6 @@ func (g *Generator) Generate(s *schema.Schema) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-
 // generateEnum generates TypeScript enum
 func (g *Generator) generateEnum(w *writer.Writer, enum schema.EnumType) {
 	// Write documentation
@@ -126,7 +125,7 @@ func (g *Generator) generateType(w *writer.Writer, typ schema.ObjectType) {
 	if g.generateClasses {
 		keyword = "class"
 	}
-	
+
 	w.WriteLinef("export %s %s {", keyword, typ.Name)
 	w.Indent()
 
@@ -143,7 +142,7 @@ func (g *Generator) generateType(w *writer.Writer, typ schema.ObjectType) {
 		if !field.Required {
 			optional = "?"
 		}
-		
+
 		if g.generateClasses {
 			w.WriteLinef("%s%s: %s;", field.Name, optional, tsType)
 		} else {
@@ -177,7 +176,7 @@ func (g *Generator) generateServiceInterface(w *writer.Writer, svc schema.Servic
 		methodName := g.toCamelCase(method.Name)
 		inputType := g.mapToTSType(method.InputType)
 		outputType := g.mapToTSType(method.OutputType)
-		
+
 		w.WriteLinef("%s(input: %s): Promise<%s>;", methodName, inputType, outputType)
 
 		if i < len(svc.Methods)-1 {
@@ -192,15 +191,15 @@ func (g *Generator) generateServiceInterface(w *writer.Writer, svc schema.Servic
 	w.BlankLine()
 	w.WriteLinef("export abstract class %sClient implements %s {", svc.Name, svc.Name)
 	w.Indent()
-	
+
 	for _, method := range svc.Methods {
 		methodName := g.toCamelCase(method.Name)
 		inputType := g.mapToTSType(method.InputType)
 		outputType := g.mapToTSType(method.OutputType)
-		
+
 		w.WriteLinef("abstract %s(input: %s): Promise<%s>;", methodName, inputType, outputType)
 	}
-	
+
 	w.Dedent()
 	w.WriteLine("}")
 }

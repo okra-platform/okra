@@ -19,7 +19,7 @@ func TestNewOkraRuntime(t *testing.T) {
 	// Test: Create new runtime
 	logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 	runtime := NewOkraRuntime(logger)
-	
+
 	assert.NotNil(t, runtime)
 	assert.NotNil(t, runtime.deployedActors)
 	assert.False(t, runtime.started)
@@ -30,32 +30,32 @@ func TestOkraRuntime_Start(t *testing.T) {
 	t.Run("successful start", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
-		
+
 		require.NoError(t, err)
 		assert.True(t, runtime.started)
 		assert.NotNil(t, runtime.actorSystem)
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 	})
-	
+
 	// Test: Start already started runtime
 	t.Run("already started", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		// Try to start again
 		err = runtime.Start(ctx)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "already started")
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 	})
@@ -68,12 +68,12 @@ func TestOkraRuntime_Deploy(t *testing.T) {
 		wasmPath := filepath.Join("..", "..", "internal", "wasm", "fixture", "math-service", "math-service.wasm")
 		wasmBytes, err := os.ReadFile(wasmPath)
 		require.NoError(t, err)
-		
+
 		// Create compiled module
 		ctx := context.Background()
 		module, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
 		require.NoError(t, err)
-		
+
 		// Create test schema
 		testSchema := &schema.Schema{
 			Services: []schema.Service{
@@ -87,96 +87,96 @@ func TestOkraRuntime_Deploy(t *testing.T) {
 			},
 			Meta: schema.Metadata{
 				Namespace: "test",
-				Version:   "v1",  // API version for backward compatibility
+				Version:   "v1", // API version for backward compatibility
 			},
 		}
-		
+
 		// Create test config
 		testConfig := &config.Config{
 			Name:     "math-service",
-			Version:  "1.0.0",  // Implementation version
+			Version:  "1.0.0", // Implementation version
 			Language: "go",
 		}
-		
+
 		pkg, err := NewServicePackage(module, testSchema, testConfig)
 		require.NoError(t, err)
-		
+
 		return pkg
 	}
-	
+
 	// Test: Deploy service successfully
 	t.Run("successful deploy", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		pkg := createTestPackage()
 		actorID, err := runtime.Deploy(ctx, pkg)
-		
+
 		require.NoError(t, err)
 		assert.Equal(t, "test.MathService.v1", actorID)
 		assert.True(t, runtime.IsDeployed(actorID))
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 		pkg.Module.Close(ctx)
 	})
-	
+
 	// Test: Deploy without starting runtime
 	t.Run("runtime not started", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		pkg := createTestPackage()
-		
+
 		_, err := runtime.Deploy(ctx, pkg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "runtime not started")
-		
+
 		// Cleanup
 		pkg.Module.Close(ctx)
 	})
-	
+
 	// Test: Deploy nil package
 	t.Run("nil package", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		_, err = runtime.Deploy(ctx, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "package cannot be nil")
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 	})
-	
+
 	// Test: Deploy same service twice
 	t.Run("already deployed", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		pkg := createTestPackage()
 		actorID, err := runtime.Deploy(ctx, pkg)
 		require.NoError(t, err)
-		
+
 		// Try to deploy again
 		_, err = runtime.Deploy(ctx, pkg)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "already deployed")
 		assert.Equal(t, actorID, "test.MathService.v1")
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 		pkg.Module.Close(ctx)
@@ -188,19 +188,19 @@ func TestOkraRuntime_Undeploy(t *testing.T) {
 	t.Run("successful undeploy", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		// Deploy a service first
 		wasmPath := filepath.Join("..", "..", "internal", "wasm", "fixture", "math-service", "math-service.wasm")
 		wasmBytes, err := os.ReadFile(wasmPath)
 		require.NoError(t, err)
-		
+
 		module, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
 		require.NoError(t, err)
-		
+
 		testSchema := &schema.Schema{
 			Services: []schema.Service{
 				{
@@ -211,54 +211,54 @@ func TestOkraRuntime_Undeploy(t *testing.T) {
 				},
 			},
 			Meta: schema.Metadata{
-				Version: "v1",  // API version
+				Version: "v1", // API version
 			},
 		}
-		
+
 		testConfig := &config.Config{
 			Name:    "math-service",
-			Version: "1.0.0",  // Implementation version
+			Version: "1.0.0", // Implementation version
 		}
-		
+
 		pkg, err := NewServicePackage(module, testSchema, testConfig)
 		require.NoError(t, err)
-		
+
 		actorID, err := runtime.Deploy(ctx, pkg)
 		require.NoError(t, err)
 		assert.True(t, runtime.IsDeployed(actorID))
-		
+
 		// Undeploy
 		err = runtime.Undeploy(ctx, actorID)
 		require.NoError(t, err)
 		assert.False(t, runtime.IsDeployed(actorID))
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 		module.Close(ctx)
 	})
-	
+
 	// Test: Undeploy non-existent service
 	t.Run("service not deployed", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		err = runtime.Undeploy(ctx, "non.existent.v1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not deployed")
-		
+
 		// Cleanup
 		runtime.Shutdown(ctx)
 	})
-	
+
 	// Test: Undeploy without starting runtime
 	t.Run("runtime not started", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Undeploy(ctx, "some.service.v1")
 		assert.Error(t, err)
@@ -271,19 +271,19 @@ func TestOkraRuntime_Shutdown(t *testing.T) {
 	t.Run("shutdown with services", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Start(ctx)
 		require.NoError(t, err)
-		
+
 		// Deploy a service
 		wasmPath := filepath.Join("..", "..", "internal", "wasm", "fixture", "math-service", "math-service.wasm")
 		wasmBytes, err := os.ReadFile(wasmPath)
 		require.NoError(t, err)
-		
+
 		module, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
 		require.NoError(t, err)
-		
+
 		testSchema := &schema.Schema{
 			Services: []schema.Service{
 				{
@@ -294,40 +294,40 @@ func TestOkraRuntime_Shutdown(t *testing.T) {
 				},
 			},
 			Meta: schema.Metadata{
-				Version: "v1",  // API version
+				Version: "v1", // API version
 			},
 		}
-		
+
 		testConfig := &config.Config{
 			Name:    "math-service",
-			Version: "1.0.0",  // Implementation version
+			Version: "1.0.0", // Implementation version
 		}
-		
+
 		pkg, err := NewServicePackage(module, testSchema, testConfig)
 		require.NoError(t, err)
-		
+
 		actorID, err := runtime.Deploy(ctx, pkg)
 		require.NoError(t, err)
 		assert.NotEmpty(t, actorID)
-		
+
 		// Shutdown
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		
+
 		err = runtime.Shutdown(shutdownCtx)
 		require.NoError(t, err)
 		assert.False(t, runtime.started)
 		assert.Empty(t, runtime.deployedActors)
-		
+
 		// Cleanup
 		module.Close(ctx)
 	})
-	
+
 	// Test: Shutdown without starting
 	t.Run("shutdown not started", func(t *testing.T) {
 		logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 		runtime := NewOkraRuntime(logger)
-		
+
 		ctx := context.Background()
 		err := runtime.Shutdown(ctx)
 		assert.Error(t, err)
@@ -338,7 +338,7 @@ func TestOkraRuntime_Shutdown(t *testing.T) {
 func TestOkraRuntime_generateActorID(t *testing.T) {
 	logger := zerolog.New(os.Stderr).Level(zerolog.ErrorLevel)
 	runtime := NewOkraRuntime(logger)
-	
+
 	tests := []struct {
 		name     string
 		pkg      *ServicePackage
@@ -355,7 +355,7 @@ func TestOkraRuntime_generateActorID(t *testing.T) {
 					},
 				},
 				Config: &config.Config{
-					Version: "2.1.0",  // Implementation version
+					Version: "2.1.0", // Implementation version
 				},
 			},
 			expected: "prod.MyService.v2",
@@ -397,7 +397,7 @@ func TestOkraRuntime_generateActorID(t *testing.T) {
 			expected: "default.MyService.v1",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			actorID := runtime.generateActorID(tt.pkg)
@@ -416,12 +416,12 @@ func TestOkraRuntime_GetActorPID(t *testing.T) {
 		wasmPath := filepath.Join("..", "..", "internal", "wasm", "fixture", "math-service", "math-service.wasm")
 		wasmBytes, err := os.ReadFile(wasmPath)
 		require.NoError(t, err)
-		
+
 		// Create compiled module
 		ctx := context.Background()
 		module, err := wasm.NewWASMCompiledModule(ctx, wasmBytes)
 		require.NoError(t, err)
-		
+
 		return &ServicePackage{
 			ServiceName: "TestService",
 			Module:      module,
@@ -448,12 +448,12 @@ func TestOkraRuntime_GetActorPID(t *testing.T) {
 				runtime := NewOkraRuntime(logger)
 				err := runtime.Start(context.Background())
 				require.NoError(t, err)
-				
+
 				// Deploy a service
 				pkg := createSimpleTestPackage()
 				_, err = runtime.Deploy(context.Background(), pkg)
 				require.NoError(t, err)
-				
+
 				return runtime
 			},
 			serviceName:    "test.TestService.v1",
@@ -488,7 +488,7 @@ func TestOkraRuntime_GetActorPID(t *testing.T) {
 			defer runtime.Shutdown(context.Background())
 
 			pid := runtime.GetActorPID(tt.serviceName)
-			
+
 			if tt.expectedResult {
 				assert.NotNil(t, pid, "expected PID to be returned")
 			} else {

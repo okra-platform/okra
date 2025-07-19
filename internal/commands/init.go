@@ -97,7 +97,7 @@ func (ic *InitCommand) RunWithOptions(ctx context.Context, opts ...tea.ProgramOp
 
 	var options *InitOptions
 	var err error
-	
+
 	// For testing: use provided options instead of prompting
 	if ic.testOptions != nil {
 		options = ic.testOptions
@@ -127,7 +127,7 @@ func (ic *InitCommand) promptInitOptions(opts ...tea.ProgramOption) (*InitOption
 	var template string
 
 	form := ic.createInitForm(&projectName, &template)
-	
+
 	if len(opts) > 0 {
 		// For testing: run with provided options
 		program := tea.NewProgram(form, opts...)
@@ -183,7 +183,7 @@ func (ic *InitCommand) ensureTemplatesExtracted() (string, error) {
 	}
 
 	okraDir := filepath.Join(homeDir, ".okra", "templates")
-	
+
 	if _, err := ic.filesystem.Stat(okraDir); err == nil {
 		return okraDir, nil
 	}

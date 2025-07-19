@@ -11,8 +11,8 @@ import (
 
 // GoPackageInfo contains information about a Go package
 type GoPackageInfo struct {
-	PackageName    string
-	HasConstructor bool
+	PackageName     string
+	HasConstructor  bool
 	ConstructorName string
 }
 
@@ -33,53 +33,53 @@ func NewGoParser() *GoParser {
 // ParsePackageInfo parses Go files in a directory to extract package information
 func (p *GoParser) ParsePackageInfo(dir string) (*GoPackageInfo, error) {
 	info := &GoPackageInfo{}
-	
+
 	// Find all .go files (excluding test files and generated files)
 	goFiles, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to find Go files: %w", err)
 	}
-	
+
 	foundPackage := false
-	
+
 	for _, file := range goFiles {
 		// Skip test files and generated files
 		base := filepath.Base(file)
-		if strings.HasSuffix(base, "_test.go") || 
-		   strings.Contains(base, ".gen.") || 
-		   strings.Contains(base, "_gen.") ||
-		   base == "interface.go" {
+		if strings.HasSuffix(base, "_test.go") ||
+			strings.Contains(base, ".gen.") ||
+			strings.Contains(base, "_gen.") ||
+			base == "interface.go" {
 			continue
 		}
-		
+
 		// Parse the file
 		fileInfo, err := p.parseGoFile(file)
 		if err != nil {
 			continue // Skip files we can't parse
 		}
-		
+
 		// Set package name from first valid file
 		if !foundPackage && fileInfo.PackageName != "" && fileInfo.PackageName != "main" {
 			info.PackageName = fileInfo.PackageName
 			foundPackage = true
 		}
-		
+
 		// Look for constructor
 		if fileInfo.HasConstructor && !info.HasConstructor {
 			info.HasConstructor = true
 			info.ConstructorName = fileInfo.ConstructorName
 		}
 	}
-	
+
 	if !foundPackage {
 		return nil, fmt.Errorf("no valid Go package found in %s", dir)
 	}
-	
+
 	// Default constructor name if not found
 	if !info.HasConstructor {
 		info.ConstructorName = "NewService"
 	}
-	
+
 	return info, nil
 }
 
@@ -90,30 +90,30 @@ func (p *GoParser) parseGoFile(filepath string) (*GoPackageInfo, error) {
 		return nil, err
 	}
 	defer file.Close()
-	
+
 	info := &GoPackageInfo{}
 	scanner := bufio.NewScanner(file)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Skip comments
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
 			continue
 		}
-		
+
 		// Look for package declaration
 		if matches := p.packagePattern.FindStringSubmatch(line); len(matches) > 1 {
 			info.PackageName = matches[1]
 		}
-		
+
 		// Look for constructor functions (NewService, NewXService, etc.)
 		if matches := p.constructorPattern.FindStringSubmatch(line); len(matches) > 1 {
 			constructorName := matches[1]
 			// Prefer NewService or New{ServiceName} patterns
-			if constructorName == "NewService" || 
-			   strings.HasPrefix(constructorName, "New") && strings.Contains(constructorName, "Service") {
+			if constructorName == "NewService" ||
+				strings.HasPrefix(constructorName, "New") && strings.Contains(constructorName, "Service") {
 				info.HasConstructor = true
 				info.ConstructorName = constructorName
 				break // Found preferred constructor
@@ -124,7 +124,7 @@ func (p *GoParser) parseGoFile(filepath string) (*GoPackageInfo, error) {
 			}
 		}
 	}
-	
+
 	return info, scanner.Err()
 }
 
@@ -136,16 +136,16 @@ func (p *GoParser) ExtractModulePath(projectRoot string) (string, error) {
 		return "", fmt.Errorf("failed to open go.mod: %w", err)
 	}
 	defer file.Close()
-	
+
 	scanner := bufio.NewScanner(file)
 	modulePattern := regexp.MustCompile(`^\s*module\s+(.+)`)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if matches := modulePattern.FindStringSubmatch(line); len(matches) > 1 {
 			return strings.TrimSpace(matches[1]), nil
 		}
 	}
-	
+
 	return "", fmt.Errorf("module declaration not found in go.mod")
 }

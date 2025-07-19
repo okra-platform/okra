@@ -21,7 +21,7 @@ import (
 func TestGenerator_Generate(t *testing.T) {
 	// Test: Basic protobuf generation
 	gen := NewGenerator("testpkg")
-	
+
 	schema := &schema.Schema{
 		Services: []schema.Service{
 			{
@@ -59,19 +59,19 @@ func TestGenerator_Generate(t *testing.T) {
 			},
 		},
 	}
-	
+
 	proto, err := gen.Generate(schema)
 	require.NoError(t, err)
-	
+
 	// Check header
 	assert.Contains(t, proto, "syntax = \"proto3\";")
 	assert.Contains(t, proto, "package testpkg;")
 	assert.Contains(t, proto, "option go_package")
-	
+
 	// Check service
 	assert.Contains(t, proto, "service TestService {")
 	assert.Contains(t, proto, "rpc GetUser(GetUserRequest) returns (GetUserResponse);")
-	
+
 	// Check messages
 	assert.Contains(t, proto, "message GetUserRequest {")
 	assert.Contains(t, proto, "string id = 1;")
@@ -81,7 +81,7 @@ func TestGenerator_Generate(t *testing.T) {
 func TestGenerator_GenerateEnum(t *testing.T) {
 	// Test: Enum generation with UNSPECIFIED value
 	gen := NewGenerator("testpkg")
-	
+
 	schema := &schema.Schema{
 		Enums: []schema.EnumType{
 			{
@@ -95,10 +95,10 @@ func TestGenerator_GenerateEnum(t *testing.T) {
 			},
 		},
 	}
-	
+
 	proto, err := gen.Generate(schema)
 	require.NoError(t, err)
-	
+
 	// Check enum with proper values
 	assert.Contains(t, proto, "// User status")
 	assert.Contains(t, proto, "enum Status {")
@@ -112,7 +112,7 @@ func TestGenerator_GenerateEnum(t *testing.T) {
 func TestGenerator_FieldTypes(t *testing.T) {
 	// Test: Various field types and modifiers
 	gen := NewGenerator("testpkg")
-	
+
 	schema := &schema.Schema{
 		Types: []schema.ObjectType{
 			{
@@ -132,10 +132,10 @@ func TestGenerator_FieldTypes(t *testing.T) {
 			},
 		},
 	}
-	
+
 	proto, err := gen.Generate(schema)
 	require.NoError(t, err)
-	
+
 	// Check type mappings
 	assert.Contains(t, proto, "string string_field = 1;")
 	assert.Contains(t, proto, "int32 int_field = 2;")
@@ -152,7 +152,7 @@ func TestGenerator_FieldTypes(t *testing.T) {
 func TestGenerator_TimestampImport(t *testing.T) {
 	// Test: Timestamp import is added when needed
 	gen := NewGenerator("testpkg")
-	
+
 	schema := &schema.Schema{
 		Types: []schema.ObjectType{
 			{
@@ -165,10 +165,10 @@ func TestGenerator_TimestampImport(t *testing.T) {
 			},
 		},
 	}
-	
+
 	proto, err := gen.Generate(schema)
 	require.NoError(t, err)
-	
+
 	// Check timestamp import
 	assert.Contains(t, proto, "import \"google/protobuf/timestamp.proto\";")
 	assert.Contains(t, proto, "google.protobuf.Timestamp created_at = 2;")
@@ -178,7 +178,7 @@ func TestGenerator_TimestampImport(t *testing.T) {
 func TestGenerator_ComplexSchema(t *testing.T) {
 	// Test: Complex schema with multiple services, types, and enums
 	gen := NewGenerator("complex")
-	
+
 	schema := &schema.Schema{
 		Services: []schema.Service{
 			{
@@ -225,15 +225,15 @@ func TestGenerator_ComplexSchema(t *testing.T) {
 			},
 		},
 	}
-	
+
 	proto, err := gen.Generate(schema)
 	require.NoError(t, err)
-	
+
 	// Count occurrences
 	serviceCount := strings.Count(proto, "service ")
 	messageCount := strings.Count(proto, "message ")
 	enumCount := strings.Count(proto, "enum ")
-	
+
 	assert.Equal(t, 2, serviceCount)
 	assert.Equal(t, 2, messageCount)
 	assert.Equal(t, 1, enumCount)

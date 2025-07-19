@@ -64,14 +64,14 @@ func TestTypeScriptDevelopmentWorkflow_Integration(t *testing.T) {
 	t.Run("initial build", func(t *testing.T) {
 		// Run build (code generation + WASM compilation)
 		err := server.build()
-		
+
 		// Build will fail without Javy, but we can verify it gets to that point
 		if err != nil {
 			// Should fail on Javy, not earlier
 			assert.True(t,
 				os.IsNotExist(err) || // node_modules missing
-				strings.Contains(err.Error(), "javy not found") ||
-				strings.Contains(err.Error(), "npm install"),
+					strings.Contains(err.Error(), "javy not found") ||
+					strings.Contains(err.Error(), "npm install"),
 				"Unexpected error: %v", err)
 		}
 

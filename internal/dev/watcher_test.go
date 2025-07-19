@@ -85,7 +85,7 @@ func TestFileWatcher_shouldWatch(t *testing.T) {
 				patterns: tt.patterns,
 				exclude:  tt.exclude,
 			}
-			
+
 			got := fw.shouldWatch(tt.path)
 			assert.Equal(t, tt.want, got)
 		})
@@ -98,19 +98,19 @@ func TestFileWatcher_Integration(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	
+
 	// Create a test directory structure
 	srcDir := filepath.Join(tmpDir, "src")
 	err := os.MkdirAll(srcDir, 0755)
 	require.NoError(t, err)
-	
+
 	// Track events
 	var events []struct {
 		path string
 		op   fsnotify.Op
 	}
 	var eventsMu sync.Mutex
-	
+
 	onChange := func(path string, op fsnotify.Op) {
 		eventsMu.Lock()
 		defer eventsMu.Unlock()
@@ -119,7 +119,7 @@ func TestFileWatcher_Integration(t *testing.T) {
 			op   fsnotify.Op
 		}{path: path, op: op})
 	}
-	
+
 	// Create watcher
 	fw, err := NewFileWatcher(
 		[]string{"*.go", "**/*.go", "*.okra.gql"},
@@ -128,68 +128,68 @@ func TestFileWatcher_Integration(t *testing.T) {
 	)
 	require.NoError(t, err)
 	defer fw.Close()
-	
+
 	// Add directory to watch
 	err = fw.AddDirectory(tmpDir)
 	require.NoError(t, err)
-	
+
 	// Start watching in background
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	errChan := make(chan error, 1)
 	go func() {
 		errChan <- fw.Start(ctx)
 	}()
-	
+
 	// Give watcher time to start
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Test 1: Create a Go file (should trigger)
 	goFile := filepath.Join(tmpDir, "main.go")
 	err = os.WriteFile(goFile, []byte("package main"), 0644)
 	require.NoError(t, err)
-	
+
 	// Test 2: Create a test file (should not trigger)
 	testFile := filepath.Join(tmpDir, "main_test.go")
 	err = os.WriteFile(testFile, []byte("package main"), 0644)
 	require.NoError(t, err)
-	
+
 	// Test 3: Create a GraphQL file (should trigger)
 	graphqlFile := filepath.Join(tmpDir, "service.okra.gql")
 	err = os.WriteFile(graphqlFile, []byte("type Query { hello: String }"), 0644)
 	require.NoError(t, err)
-	
+
 	// Test 4: Create a file in src directory (should trigger)
 	srcFile := filepath.Join(srcDir, "handler.go")
 	err = os.WriteFile(srcFile, []byte("package src"), 0644)
 	require.NoError(t, err)
-	
+
 	// Test 5: Create a vendor directory and file (should not trigger)
 	vendorDir := filepath.Join(tmpDir, "vendor")
 	err = os.MkdirAll(vendorDir, 0755)
 	require.NoError(t, err)
-	
+
 	vendorFile := filepath.Join(vendorDir, "lib.go")
 	err = os.WriteFile(vendorFile, []byte("package vendor"), 0644)
 	require.NoError(t, err)
-	
+
 	// Give time for events to be processed
 	time.Sleep(200 * time.Millisecond)
-	
+
 	// Check events
 	eventsMu.Lock()
 	defer eventsMu.Unlock()
-	
+
 	// Should have events for: main.go, service.okra.gql, handler.go
 	assert.GreaterOrEqual(t, len(events), 3, "Expected at least 3 events")
-	
+
 	// Verify expected files triggered events
 	fileNames := make(map[string]bool)
 	for _, e := range events {
 		fileNames[filepath.Base(e.path)] = true
 	}
-	
+
 	assert.True(t, fileNames["main.go"], "Expected event for main.go")
 	assert.True(t, fileNames["service.okra.gql"], "Expected event for service.okra.gql")
 	assert.True(t, fileNames["handler.go"], "Expected event for handler.go")
@@ -199,7 +199,7 @@ func TestFileWatcher_Integration(t *testing.T) {
 
 func TestFileWatcher_AddDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Create directory structure with excludes
 	dirs := []string{
 		"src",
@@ -208,12 +208,12 @@ func TestFileWatcher_AddDirectory(t *testing.T) {
 		"node_modules",
 		".git",
 	}
-	
+
 	for _, dir := range dirs {
 		err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755)
 		require.NoError(t, err)
 	}
-	
+
 	fw, err := NewFileWatcher(
 		[]string{"*.go"},
 		[]string{"vendor", "node_modules", ".git"},
@@ -221,11 +221,11 @@ func TestFileWatcher_AddDirectory(t *testing.T) {
 	)
 	require.NoError(t, err)
 	defer fw.Close()
-	
+
 	// Add root directory
 	err = fw.AddDirectory(tmpDir)
 	require.NoError(t, err)
-	
+
 	// Verify that excluded directories were not added
 	// This is a bit tricky to test directly, but we can verify
 	// by checking that creating files in excluded dirs doesn't trigger events
@@ -238,11 +238,11 @@ func TestFileWatcher_Close(t *testing.T) {
 		func(string, fsnotify.Op) {},
 	)
 	require.NoError(t, err)
-	
+
 	// Close should not error
 	err = fw.Close()
 	assert.NoError(t, err)
-	
+
 	// Double close should also be safe
 	err = fw.Close()
 	assert.NoError(t, err)

@@ -13,10 +13,10 @@ func TestGenerator_EmptySchema(t *testing.T) {
 	// Test: Empty schema generates minimal valid TypeScript code
 	g := NewGenerator("")
 	s := &schema.Schema{}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Equal(t, "", strings.TrimSpace(result))
 }
@@ -39,10 +39,10 @@ func TestGenerator_BasicTypes(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "/** User represents a system user */")
 	assert.Contains(t, result, "export interface User {")
@@ -66,10 +66,10 @@ func TestGenerator_WithClasses(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "export class User {")
 	assert.NotContains(t, result, "export interface User {")
@@ -91,10 +91,10 @@ func TestGenerator_Enums(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "/** Status represents the status of an operation */")
 	assert.Contains(t, result, "export enum Status {")
@@ -133,10 +133,10 @@ func TestGenerator_Services(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "/** UserService manages user operations */")
 	assert.Contains(t, result, "export interface UserService {")
@@ -162,10 +162,10 @@ func TestGenerator_ArrayTypes(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "members: string[];")
 	assert.Contains(t, result, "tags?: string[];")
@@ -175,7 +175,7 @@ func TestGenerator_ArrayTypes(t *testing.T) {
 func TestGenerator_TypeMapping(t *testing.T) {
 	// Test: Verify type mapping works correctly
 	g := NewGenerator("")
-	
+
 	tests := []struct {
 		okraType string
 		expected string
@@ -195,7 +195,7 @@ func TestGenerator_TypeMapping(t *testing.T) {
 		{"[String]", "string[]"},
 		{"[CustomType]", "CustomType[]"},
 	}
-	
+
 	for _, tt := range tests {
 		result := g.mapToTSType(tt.okraType)
 		assert.Equal(t, tt.expected, result, "Failed for type %s", tt.okraType)
@@ -215,15 +215,15 @@ func TestGenerator_WithModule(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "export module MyAPI {")
 	assert.Contains(t, result, "export interface User {")
 	assert.Contains(t, result, "}")
-	
+
 	// Check proper indentation within module
 	lines := strings.Split(result, "\n")
 	for _, line := range lines {
@@ -254,10 +254,10 @@ spans multiple lines`,
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	// Single line JSDoc
 	assert.Contains(t, result, "/** Single line doc */")
@@ -332,21 +332,21 @@ func TestGenerator_CompleteExample(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
-	
+
 	// Check enum
 	assert.Contains(t, result, "export enum Role")
 	assert.Contains(t, result, "Admin = \"Admin\"")
-	
+
 	// Check types
 	assert.Contains(t, result, "export interface User")
 	assert.Contains(t, result, "createdAt: Date;")
 	assert.Contains(t, result, "metadata?: any;")
-	
+
 	// Check service
 	assert.Contains(t, result, "export interface UserService")
 	assert.Contains(t, result, "getUser(input: GetUserRequest): Promise<User>;")
@@ -356,7 +356,7 @@ func TestGenerator_CompleteExample(t *testing.T) {
 func TestGenerator_CamelCaseConversion(t *testing.T) {
 	// Test: Method names are converted to camelCase
 	g := NewGenerator("")
-	
+
 	tests := []struct {
 		input    string
 		expected string
@@ -368,7 +368,7 @@ func TestGenerator_CamelCaseConversion(t *testing.T) {
 		{"xmlData", "xmlData"},
 		{"", ""},
 	}
-	
+
 	for _, tt := range tests {
 		result := g.toCamelCase(tt.input)
 		assert.Equal(t, tt.expected, result, "Failed for input: %s", tt.input)

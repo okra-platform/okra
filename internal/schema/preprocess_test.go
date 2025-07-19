@@ -71,7 +71,7 @@ type User {
 }`,
 		},
 		{
-			name: "okra directive with nested parentheses",
+			name:  "okra directive with nested parentheses",
 			input: `@okra(namespace: "auth", metadata: { key: "value (nested)" })`,
 			expected: `type _Schema {
   _: String @okra(namespace: "auth", metadata: { key: "value (nested)" })
@@ -152,8 +152,8 @@ type Service_OrderService {
 }`,
 		},
 		{
-			name:  "service with no spacing",
-			input: `service MyService{method():Response}`,
+			name:     "service with no spacing",
+			input:    `service MyService{method():Response}`,
 			expected: `type Service_MyService {method():Response}`,
 		},
 		{

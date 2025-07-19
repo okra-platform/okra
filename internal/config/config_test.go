@@ -55,16 +55,16 @@ func TestLoadConfigFromPath(t *testing.T) {
 			// Create temp file
 			tmpDir := t.TempDir()
 			configPath := filepath.Join(tmpDir, "okra.json")
-			
+
 			data, err := json.MarshalIndent(tt.config, "", "  ")
 			require.NoError(t, err)
-			
+
 			err = os.WriteFile(configPath, data, 0644)
 			require.NoError(t, err)
 
 			// Test loading
 			got, err := LoadConfigFromPath(configPath)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errContains != "" {
@@ -72,15 +72,15 @@ func TestLoadConfigFromPath(t *testing.T) {
 				}
 				return
 			}
-			
+
 			require.NoError(t, err)
 			require.NotNil(t, got)
-			
+
 			// Verify loaded config
 			assert.Equal(t, tt.config.Name, got.Name)
 			assert.Equal(t, tt.config.Version, got.Version)
 			assert.Equal(t, tt.config.Language, got.Language)
-			
+
 			// Check defaults were applied
 			if tt.config.Source == "" {
 				assert.Equal(t, "./", got.Source)
@@ -91,7 +91,7 @@ func TestLoadConfigFromPath(t *testing.T) {
 			if tt.config.Build.Output == "" {
 				assert.Equal(t, "./build/service.wasm", got.Build.Output)
 			}
-			
+
 			// Check language-specific defaults for watch patterns
 			if len(tt.config.Dev.Watch) == 0 {
 				switch got.Language {
@@ -103,7 +103,7 @@ func TestLoadConfigFromPath(t *testing.T) {
 					assert.Contains(t, got.Dev.Watch, "*.okra.gql")
 				}
 			}
-			
+
 			// Check default excludes
 			if len(tt.config.Dev.Exclude) == 0 {
 				assert.Contains(t, got.Dev.Exclude, "*_test.go")
@@ -145,7 +145,7 @@ func TestLoadConfigFromPath_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
 			configPath := tt.setupFunc(tmpDir)
-			
+
 			_, err := LoadConfigFromPath(configPath)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errContains)
@@ -158,23 +158,23 @@ func TestLoadConfig(t *testing.T) {
 	t.Run("config in current dir", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "okra.json")
-		
+
 		config := Config{
 			Name:     "current-dir-service",
 			Version:  "1.0.0",
 			Language: "go",
 		}
-		
+
 		data, _ := json.MarshalIndent(config, "", "  ")
 		err := os.WriteFile(configPath, data, 0644)
 		require.NoError(t, err)
-		
+
 		// Change to temp dir
 		oldWd, _ := os.Getwd()
 		defer os.Chdir(oldWd)
 		err = os.Chdir(tmpDir)
 		require.NoError(t, err)
-		
+
 		// Load config
 		got, projectRoot, err := LoadConfig()
 		require.NoError(t, err)
@@ -184,31 +184,31 @@ func TestLoadConfig(t *testing.T) {
 		actualRoot, _ := filepath.EvalSymlinks(projectRoot)
 		assert.Equal(t, expectedRoot, actualRoot)
 	})
-	
+
 	// Test finding okra.json in parent directory
 	t.Run("config in parent dir", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		subDir := filepath.Join(tmpDir, "subdir")
 		err := os.MkdirAll(subDir, 0755)
 		require.NoError(t, err)
-		
+
 		configPath := filepath.Join(tmpDir, "okra.json")
 		config := Config{
 			Name:     "parent-dir-service",
 			Version:  "1.0.0",
 			Language: "typescript",
 		}
-		
+
 		data, _ := json.MarshalIndent(config, "", "  ")
 		err = os.WriteFile(configPath, data, 0644)
 		require.NoError(t, err)
-		
+
 		// Change to subdirectory
 		oldWd, _ := os.Getwd()
 		defer os.Chdir(oldWd)
 		err = os.Chdir(subDir)
 		require.NoError(t, err)
-		
+
 		// Load config
 		got, projectRoot, err := LoadConfig()
 		require.NoError(t, err)
@@ -218,17 +218,17 @@ func TestLoadConfig(t *testing.T) {
 		actualRoot, _ := filepath.EvalSymlinks(projectRoot)
 		assert.Equal(t, expectedRoot, actualRoot)
 	})
-	
+
 	// Test no okra.json found
 	t.Run("no config found", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		
+
 		// Change to temp dir
 		oldWd, _ := os.Getwd()
 		defer os.Chdir(oldWd)
 		err := os.Chdir(tmpDir)
 		require.NoError(t, err)
-		
+
 		// Load config
 		_, _, err = LoadConfig()
 		assert.Error(t, err)

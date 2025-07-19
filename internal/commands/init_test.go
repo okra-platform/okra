@@ -100,7 +100,7 @@ func TestInitCommand_Run_FullFlow(t *testing.T) {
 			"/test/home/.okra/templates": true,
 		},
 	}
-	
+
 	cmd := &InitCommand{
 		scaffold:    mockScaffold,
 		filesystem:  mockFS,
@@ -113,7 +113,7 @@ func TestInitCommand_Run_FullFlow(t *testing.T) {
 
 	err := cmd.Run(context.Background())
 	require.NoError(t, err)
-	
+
 	// Verify scaffold was called with correct args
 	require.Len(t, mockScaffold.runCalls, 1)
 	assert.Equal(t, "test-project", mockScaffold.runCalls[0].projectName)
@@ -131,7 +131,7 @@ func TestInitCommand_Run_ScaffoldError(t *testing.T) {
 			"/test/home/.okra/templates": true,
 		},
 	}
-	
+
 	cmd := &InitCommand{
 		scaffold:    mockScaffold,
 		filesystem:  mockFS,
@@ -154,7 +154,7 @@ func TestInitCommand_FormValidation(t *testing.T) {
 			"existing-dir": true,
 		},
 	}
-	
+
 	// Test empty project name
 	cmd := &InitCommand{
 		scaffold:    &mockScaffoldRunner{},
@@ -165,22 +165,22 @@ func TestInitCommand_FormValidation(t *testing.T) {
 			Template:    "go",
 		},
 	}
-	
+
 	// The validation happens in the form, so we test through the Stat calls
 	var projectName, template string
 	form := cmd.createInitForm(&projectName, &template)
 	assert.NotNil(t, form)
-	
+
 	// Test that filesystem.Stat is called during validation
 	cmd.testOptions = &InitOptions{
 		ProjectName: "existing-dir",
 		Template:    "go",
 	}
-	
+
 	// Reset stat calls
 	mockFS.statCalls = []string{}
 	form = cmd.createInitForm(&projectName, &template)
-	
+
 	// The form itself validates when run, which we test in integration tests
 }
 
@@ -190,12 +190,12 @@ func TestInitCommand_ensureTemplatesExtracted_NewExtraction(t *testing.T) {
 		"templates/go/scaffold.json":         {Data: []byte(`{"name":"go"}`)},
 		"templates/typescript/scaffold.json": {Data: []byte(`{"name":"ts"}`)},
 	}
-	
+
 	mockFS := &mockFileSystem{
 		homeDir: "/test/home",
 		files:   map[string]bool{},
 	}
-	
+
 	cmd := &InitCommand{
 		scaffold:    &mockScaffoldRunner{},
 		filesystem:  mockFS,
@@ -205,7 +205,7 @@ func TestInitCommand_ensureTemplatesExtracted_NewExtraction(t *testing.T) {
 	dir, err := cmd.ensureTemplatesExtracted()
 	require.NoError(t, err)
 	assert.Equal(t, "/test/home/.okra/templates", dir)
-	
+
 	// Verify stat was called to check if directory exists
 	assert.Contains(t, mockFS.statCalls, "/test/home/.okra/templates")
 }
@@ -218,7 +218,7 @@ func TestInitCommand_ensureTemplatesExtracted_AlreadyExists(t *testing.T) {
 			"/test/home/.okra/templates": true,
 		},
 	}
-	
+
 	cmd := &InitCommand{
 		scaffold:    &mockScaffoldRunner{},
 		filesystem:  mockFS,
@@ -233,13 +233,13 @@ func TestInitCommand_ensureTemplatesExtracted_AlreadyExists(t *testing.T) {
 func TestInitCommand_extractTemplates(t *testing.T) {
 	// Test: template extraction logic
 	testTemplates := fstest.MapFS{
-		"templates/go/scaffold.json":         {Data: []byte(`{"name":"go"}`)},
+		"templates/go/scaffold.json":            {Data: []byte(`{"name":"go"}`)},
 		"templates/go/{{project_name}}/main.go": {Data: []byte(`package main`)},
-		"templates/typescript/scaffold.json": {Data: []byte(`{"name":"ts"}`)},
+		"templates/typescript/scaffold.json":    {Data: []byte(`{"name":"ts"}`)},
 	}
-	
+
 	mockFS := &mockFileSystem{}
-	
+
 	cmd := &InitCommand{
 		scaffold:    &mockScaffoldRunner{},
 		filesystem:  mockFS,
@@ -255,7 +255,7 @@ func TestInitCommand_promptInitOptions_Interactive(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping interactive test in short mode")
 	}
-	
+
 	// Test: form accepts input via tea.WithInput
 	cmd := &InitCommand{
 		scaffold: &mockScaffoldRunner{},
@@ -267,7 +267,7 @@ func TestInitCommand_promptInitOptions_Interactive(t *testing.T) {
 
 	// Simulate user input: project name + enter + arrow down + enter
 	input := strings.NewReader("test-project\n\x1b[B\n")
-	
+
 	options, err := cmd.promptInitOptions(
 		tea.WithInput(input),
 		tea.WithoutRenderer(),

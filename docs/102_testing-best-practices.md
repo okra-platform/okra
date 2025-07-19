@@ -69,6 +69,50 @@ If any refactors are necessary, esnure the tests pass after each one.
 * Use subtests (t.Run(...)) for variations or permutations
 * Always add t.Parallel() when safe
 
+## Running Tests in Parallel
+
+Most of our tests can run concurrently by adding `t.Parallel()` at the beginning of each test function. This dramatically reduces test execution time.
+
+### Example Transformation
+
+```go
+func TestCompiledModule(t *testing.T) {
+    t.Parallel() // Add this line
+    
+    // Test: Load WASM fixture
+    wasmBytes, err := os.ReadFile("fixture/math-service/math-service.wasm")
+    // ... rest of test
+}
+```
+
+### Guidelines for Parallel Tests
+
+1. **Safe for parallel execution:**
+   - Tests that only read files
+   - Tests that use t.TempDir() (automatically isolated)
+   - Tests using in-memory operations
+   - Tests with isolated resources
+
+2. **Need careful review:**
+   - Tests that modify global state
+   - Tests with shared file writes
+   - Tests using fixed ports
+
+3. **Cannot be parallel:**
+   - Tests that change working directory
+   - Tests modifying environment variables (without t.Setenv)
+
+### Quick Script to Find Tests Missing t.Parallel()
+
+```bash
+# Find test functions that don't have t.Parallel()
+grep -l "^func Test" internal/**/*_test.go | while read file; do
+    if ! grep -q "t.Parallel()" "$file"; then
+        echo "$file needs t.Parallel()"
+    fi
+done
+```
+
 ## Tools & Patterns
 
 ### Assertions

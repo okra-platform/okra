@@ -54,7 +54,7 @@ func main() {
 			}
 
 			log.Logger = log.Level(level)
-			
+
 			// Pass log level to controller
 			ctrl.Flags.LogLevel = c.String("log-level")
 

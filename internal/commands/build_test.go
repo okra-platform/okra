@@ -19,21 +19,21 @@ import (
 
 func TestBuild_MissingConfig(t *testing.T) {
 	// Test: Build fails gracefully when no config file exists
-	
+
 	// Create temp directory without config
 	tempDir := t.TempDir()
 	oldWd, err := os.Getwd()
 	require.NoError(t, err)
 	defer os.Chdir(oldWd)
-	
+
 	err = os.Chdir(tempDir)
 	require.NoError(t, err)
-	
+
 	// Run build command
 	controller := &Controller{
 		Flags: &Flags{},
 	}
-	
+
 	err = controller.Build(context.Background())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load configuration")
@@ -42,7 +42,7 @@ func TestBuild_MissingConfig(t *testing.T) {
 
 func TestBuild_InvalidConfig(t *testing.T) {
 	// Test: Build validates configuration properly
-	
+
 	tests := []struct {
 		name        string
 		config      string
@@ -80,7 +80,7 @@ func TestBuild_InvalidConfig(t *testing.T) {
 			expectedErr: "unsupported language: rust",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temp directory with invalid config
@@ -88,19 +88,19 @@ func TestBuild_InvalidConfig(t *testing.T) {
 			oldWd, err := os.Getwd()
 			require.NoError(t, err)
 			defer os.Chdir(oldWd)
-			
+
 			err = os.Chdir(tempDir)
 			require.NoError(t, err)
-			
+
 			// Write config
 			err = os.WriteFile("okra.json", []byte(tt.config), 0644)
 			require.NoError(t, err)
-			
+
 			// Run build command
 			controller := &Controller{
 				Flags: &Flags{},
 			}
-			
+
 			err = controller.Build(context.Background())
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
@@ -110,16 +110,16 @@ func TestBuild_InvalidConfig(t *testing.T) {
 
 func TestBuild_MissingSchema(t *testing.T) {
 	// Test: Build fails when schema file doesn't exist
-	
+
 	// Create temp directory with config but no schema
 	tempDir := t.TempDir()
 	oldWd, err := os.Getwd()
 	require.NoError(t, err)
 	defer os.Chdir(oldWd)
-	
+
 	err = os.Chdir(tempDir)
 	require.NoError(t, err)
-	
+
 	// Write valid config
 	config := `{
 		"name": "test-service",
@@ -130,16 +130,16 @@ func TestBuild_MissingSchema(t *testing.T) {
 	}`
 	err = os.WriteFile("okra.json", []byte(config), 0644)
 	require.NoError(t, err)
-	
+
 	// Create source directory
 	err = os.MkdirAll("service", 0755)
 	require.NoError(t, err)
-	
+
 	// Run build command
 	controller := &Controller{
 		Flags: &Flags{},
 	}
-	
+
 	err = controller.Build(context.Background())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "schema file not found")
@@ -147,7 +147,7 @@ func TestBuild_MissingSchema(t *testing.T) {
 
 func TestFormatBytes(t *testing.T) {
 	// Test: formatBytes formats sizes correctly
-	
+
 	tests := []struct {
 		bytes    int64
 		expected string
@@ -161,7 +161,7 @@ func TestFormatBytes(t *testing.T) {
 		{1073741824, "1.0 GB"},
 		{1099511627776, "1.0 TB"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.expected, func(t *testing.T) {
 			result := formatBytes(tt.bytes)

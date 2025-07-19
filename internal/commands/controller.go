@@ -2,13 +2,9 @@
 package commands
 
 type Flags struct {
-	LogLevel         string
+	LogLevel string
 }
 
 type Controller struct {
 	Flags *Flags
 }
-
-
-
-

@@ -24,7 +24,7 @@ func (c *Controller) Dev(ctx context.Context) error {
 	fmt.Printf("📁 Project root: %s\n", projectRoot)
 	fmt.Printf("📝 Schema: %s\n", filepath.Join(projectRoot, cfg.Schema))
 	fmt.Printf("🔧 Language: %s\n", cfg.Language)
-	
+
 	// Create a context that can be cancelled
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

@@ -21,11 +21,11 @@ type adminServer struct {
 	runtime        runtime.Runtime
 	connectGateway runtime.ConnectGateway
 	graphqlGateway runtime.GraphQLGateway
-	
+
 	// Track deployed services and their sources
 	deployedServices map[string]*DeployedService
 	servicesMu       sync.RWMutex
-	
+
 	server *http.Server
 }
 
@@ -72,18 +72,18 @@ func NewAdminServer(runtime runtime.Runtime, connectGateway runtime.ConnectGatew
 // Start starts the admin server on the specified port
 func (s *adminServer) Start(ctx context.Context, port int) error {
 	mux := http.NewServeMux()
-	
+
 	// Register routes
 	mux.HandleFunc("/api/v1/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/packages/deploy", s.handleDeploy)
-	mux.HandleFunc("/api/v1/packages/", s.handleUndeploy)  // Note the trailing slash for path prefix
+	mux.HandleFunc("/api/v1/packages/", s.handleUndeploy) // Note the trailing slash for path prefix
 	mux.HandleFunc("/api/v1/packages", s.handleListServices)
-	
+
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
-	
+
 	// Start server in goroutine
 	errChan := make(chan error, 1)
 	go func() {
@@ -91,7 +91,7 @@ func (s *adminServer) Start(ctx context.Context, port int) error {
 			errChan <- err
 		}
 	}()
-	
+
 	// Wait for context cancellation or error
 	select {
 	case <-ctx.Done():
@@ -110,7 +110,7 @@ func (s *adminServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		s.sendError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "healthy",
@@ -124,26 +124,26 @@ func (s *adminServer) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		s.sendError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	
+
 	var req DeployRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.sendError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	
+
 	// Validate source
 	if req.Source == "" {
 		s.sendError(w, http.StatusBadRequest, "source is required")
 		return
 	}
-	
+
 	// Deploy the package
 	serviceID, endpoints, err := s.deployPackage(r.Context(), req.Source, req.Override)
 	if err != nil {
 		s.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	// Track the deployment
 	s.servicesMu.Lock()
 	s.deployedServices[serviceID] = &DeployedService{
@@ -152,7 +152,7 @@ func (s *adminServer) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		DeployedAt: time.Now(),
 	}
 	s.servicesMu.Unlock()
-	
+
 	// Send response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(&DeployResponse{
@@ -161,7 +161,6 @@ func (s *adminServer) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		Endpoints: endpoints,
 	})
 }
-
 
 // handleListServices handles listing deployed services
 func (s *adminServer) handleListServices(w http.ResponseWriter, r *http.Request) {
@@ -176,7 +175,7 @@ func (s *adminServer) handleListServices(w http.ResponseWriter, r *http.Request)
 		services = append(services, svc)
 	}
 	s.servicesMu.RUnlock()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(&ListServicesResponse{
 		Services: services,
@@ -198,36 +197,36 @@ func (s *adminServer) handleUndeploy(w http.ResponseWriter, r *http.Request) {
 		s.sendError(w, http.StatusBadRequest, "service ID required")
 		return
 	}
-	
+
 	serviceID := path[len(prefix):]
 	if serviceID == "" {
 		s.sendError(w, http.StatusBadRequest, "service ID required")
 		return
 	}
-	
+
 	// Check if service exists
 	s.servicesMu.RLock()
 	_, exists := s.deployedServices[serviceID]
 	s.servicesMu.RUnlock()
-	
+
 	if !exists {
 		s.sendError(w, http.StatusNotFound, "service not found")
 		return
 	}
-	
+
 	// Undeploy from runtime
 	if err := s.runtime.Undeploy(r.Context(), serviceID); err != nil {
 		s.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	// Gateway will be updated on next deployment with new service
-	
+
 	// Remove from tracking
 	s.servicesMu.Lock()
 	delete(s.deployedServices, serviceID)
 	s.servicesMu.Unlock()
-	
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -238,18 +237,18 @@ func (s *adminServer) deployPackage(ctx context.Context, source string, override
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to load package: %w", err)
 	}
-	
+
 	// Deploy to runtime
 	actorID, err := s.runtime.Deploy(ctx, pkg)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to deploy to runtime: %w", err)
 	}
-	
+
 	// Update gateway with protobuf descriptors if available
 	var endpoints []string
 	if pkg.FileDescriptors != nil {
 		fmt.Printf("Debug: Updating gateway for service %s (actor ID: %s)\n", pkg.ServiceName, actorID)
-		
+
 		// Get actor PID from runtime (same approach as dev server)
 		okraRuntime, ok := s.runtime.(*runtime.OkraRuntime)
 		if !ok {
@@ -259,38 +258,38 @@ func (s *adminServer) deployPackage(ctx context.Context, source string, override
 			if actorPID == nil {
 				fmt.Printf("Warning: failed to get actor PID for service %s (actor ID: %s)\n", pkg.ServiceName, actorID)
 			} else {
-			fmt.Printf("Debug: Got actor PID for service %s\n", pkg.ServiceName)
-			if err := s.connectGateway.UpdateService(ctx, pkg.ServiceName, pkg.FileDescriptors, actorPID); err != nil {
-				// Log error but don't fail deployment
-				fmt.Printf("Warning: failed to update gateway with service: %v\n", err)
-			} else {
-				fmt.Printf("✅ Service %s deployed and exposed via ConnectRPC\n", pkg.ServiceName)
-				// Generate ConnectRPC endpoint URLs
-				for methodName := range pkg.Methods {
-					endpoint := fmt.Sprintf("/connect/%s.%s/%s", 
-						pkg.Schema.Meta.Namespace, 
-						pkg.ServiceName, 
-						methodName)
-					endpoints = append(endpoints, endpoint)
-				}
-				
-				// Update GraphQL gateway
-				namespace := pkg.Schema.Meta.Namespace
-				if namespace == "" {
-					namespace = "default"
-				}
-				if err := s.graphqlGateway.UpdateService(ctx, namespace, pkg.Schema, actorPID); err != nil {
-					fmt.Printf("Warning: failed to update GraphQL gateway: %v\n", err)
+				fmt.Printf("Debug: Got actor PID for service %s\n", pkg.ServiceName)
+				if err := s.connectGateway.UpdateService(ctx, pkg.ServiceName, pkg.FileDescriptors, actorPID); err != nil {
+					// Log error but don't fail deployment
+					fmt.Printf("Warning: failed to update gateway with service: %v\n", err)
 				} else {
-					fmt.Printf("✅ Service %s also exposed via GraphQL at /graphql/%s\n", pkg.ServiceName, namespace)
+					fmt.Printf("✅ Service %s deployed and exposed via ConnectRPC\n", pkg.ServiceName)
+					// Generate ConnectRPC endpoint URLs
+					for methodName := range pkg.Methods {
+						endpoint := fmt.Sprintf("/connect/%s.%s/%s",
+							pkg.Schema.Meta.Namespace,
+							pkg.ServiceName,
+							methodName)
+						endpoints = append(endpoints, endpoint)
+					}
+
+					// Update GraphQL gateway
+					namespace := pkg.Schema.Meta.Namespace
+					if namespace == "" {
+						namespace = "default"
+					}
+					if err := s.graphqlGateway.UpdateService(ctx, namespace, pkg.Schema, actorPID); err != nil {
+						fmt.Printf("Warning: failed to update GraphQL gateway: %v\n", err)
+					} else {
+						fmt.Printf("✅ Service %s also exposed via GraphQL at /graphql/%s\n", pkg.ServiceName, namespace)
+					}
 				}
 			}
-		}
 		}
 	} else {
 		fmt.Printf("Warning: No FileDescriptors for service %s\n", pkg.ServiceName)
 	}
-	
+
 	return actorID, endpoints, nil
 }
 

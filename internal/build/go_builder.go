@@ -1,8 +1,8 @@
 package build
 
 import (
-	_ "embed"
 	"bufio"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +17,7 @@ import (
 )
 
 // Embed the wrapper template
+//
 //go:embed templates/go/wrapper.go.tmpl
 var goWrapperTemplate string
 
@@ -34,7 +35,7 @@ func NewGoBuilder(cfg *config.Config, projectRoot string, s *schema.Schema) *GoB
 		Timestamp().
 		Str("component", "go-builder").
 		Logger()
-		
+
 	return &GoBuilder{
 		config:      cfg,
 		projectRoot: projectRoot,
@@ -49,7 +50,7 @@ func (b *GoBuilder) Build() error {
 	if _, err := exec.LookPath("tinygo"); err != nil {
 		return fmt.Errorf("TinyGo not found in PATH. Please install TinyGo from https://tinygo.org/getting-started/install/")
 	}
-	
+
 	// Create temporary build directory
 	tmpDir, err := os.MkdirTemp("", "okra-go-build-*")
 	if err != nil {
@@ -64,7 +65,7 @@ func (b *GoBuilder) Build() error {
 	// - Examining intermediate build artifacts
 	// See docs/10_development-debugging.md for more details
 	keepBuildDir := os.Getenv("OKRA_KEEP_BUILD_DIR") != ""
-	
+
 	defer func() {
 		if keepBuildDir {
 			b.logger.Info().
@@ -98,7 +99,7 @@ func (b *GoBuilder) Build() error {
 	if b.config.Source != "./" && b.config.Source != "." {
 		// Clean the source path
 		cleanSource := strings.TrimPrefix(b.config.Source, "./")
-		
+
 		// Check if source is a file or directory
 		sourcePath := filepath.Join(b.projectRoot, b.config.Source)
 		if info, err := os.Stat(sourcePath); err == nil && !info.IsDir() {
@@ -146,14 +147,14 @@ func (b *GoBuilder) Build() error {
 			return fmt.Errorf("failed to copy types directory: %w", err)
 		}
 	}
-	
+
 	// Copy the service source directory
 	sourcePath := filepath.Join(b.projectRoot, b.config.Source)
 	b.logger.Debug().
 		Str("source_path", sourcePath).
 		Str("config_source", b.config.Source).
 		Msg("checking service source directory")
-	
+
 	if info, err := os.Stat(sourcePath); err == nil {
 		if info.IsDir() {
 			// Source is a directory, copy it
@@ -191,7 +192,7 @@ func (b *GoBuilder) Build() error {
 		b.logger.Debug().Msg("temp build directory contents:")
 		b.logDirContents(tmpDir, "  ")
 	}
-	
+
 	// Run TinyGo build
 	b.logger.Debug().Str("tmpDir", tmpDir).Msg("starting TinyGo build")
 	if err := b.runTinyGoBuild(tmpDir); err != nil {
@@ -289,7 +290,7 @@ func (b *GoBuilder) generateWrapper(tmpDir string, modulePath string, userServic
 		return fmt.Errorf("failed to execute wrapper template: %w", err)
 	}
 	file.Close()
-	
+
 	// Log the generated wrapper for debugging
 	if b.logger.Debug().Enabled() {
 		wrapperContent, _ := os.ReadFile(wrapperPath)
@@ -309,7 +310,7 @@ func (b *GoBuilder) createTempGoMod(tmpDir string, userModulePath string) error 
 	if err != nil {
 		return fmt.Errorf("failed to read user's go.mod: %w", err)
 	}
-	
+
 	// Extract go version
 	goVersion := "1.21"
 	lines := strings.Split(string(userGoMod), "\n")
@@ -319,7 +320,7 @@ func (b *GoBuilder) createTempGoMod(tmpDir string, userModulePath string) error 
 			break
 		}
 	}
-	
+
 	goModContent := fmt.Sprintf(`module okra-temp-build
 
 go %s
@@ -340,7 +341,7 @@ replace %s => %s
 // runTinyGoBuild executes TinyGo to compile the WASM module
 func (b *GoBuilder) runTinyGoBuild(tmpDir string) error {
 	fmt.Println("   🔧 Running TinyGo build...")
-	
+
 	args := []string{
 		"build",
 		"-o", "service.wasm",
@@ -351,17 +352,17 @@ func (b *GoBuilder) runTinyGoBuild(tmpDir string) error {
 		"-no-debug",
 		".",
 	}
-	
+
 	b.logger.Debug().
 		Str("dir", tmpDir).
 		Strs("args", args).
 		Msg("executing TinyGo build")
-	
+
 	cmd := exec.Command("tinygo", args...)
 	cmd.Dir = tmpDir
 
 	b.logger.Debug().
-		Str("command", "tinygo " + strings.Join(args, " ")).
+		Str("command", "tinygo "+strings.Join(args, " ")).
 		Str("working_dir", tmpDir).
 		Msg("executing TinyGo command")
 
@@ -379,7 +380,7 @@ func (b *GoBuilder) runTinyGoBuild(tmpDir string) error {
 		errorMsg += "\n  - Incompatible Go features for TinyGo/WASI target"
 		return fmt.Errorf("%s", errorMsg)
 	}
-	
+
 	// Log successful build
 	b.logger.Debug().Msg("TinyGo build completed successfully")
 
@@ -429,7 +430,7 @@ func (b *GoBuilder) copyDir(src, dst string) error {
 				Msg("skipping go.mod/go.sum file to avoid module conflicts")
 			continue
 		}
-		
+
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
 
@@ -474,7 +475,7 @@ func (b *GoBuilder) logDirContents(dir string, indent string) {
 	if err != nil {
 		return
 	}
-	
+
 	for _, entry := range entries {
 		b.logger.Debug().Msgf("%s%s", indent, entry.Name())
 		if entry.IsDir() {

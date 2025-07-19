@@ -146,7 +146,6 @@ func TestServicePackage_GetMethod(t *testing.T) {
 	assert.Nil(t, method)
 }
 
-
 func strPtr(s string) *string {
 	return &s
 }
@@ -171,7 +170,7 @@ func TestServicePackage_WithFileDescriptors(t *testing.T) {
 			{Name: strPtr("test2.proto")},
 		},
 	}
-	
+
 	result := pkg.WithFileDescriptors(fds)
 	assert.Equal(t, pkg, result) // Should return the same instance
 	assert.NotNil(t, pkg.FileDescriptors)
@@ -190,20 +189,20 @@ func TestLoadFileDescriptors(t *testing.T) {
 			},
 		},
 	}
-	
+
 	data, err := proto.Marshal(fds)
 	require.NoError(t, err)
-	
+
 	// Write to temporary file
 	tmpFile, err := os.CreateTemp("", "test-*.pb.desc")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
-	
+
 	_, err = tmpFile.Write(data)
 	require.NoError(t, err)
 	err = tmpFile.Close()
 	require.NoError(t, err)
-	
+
 	// Load from file
 	loaded, err := LoadFileDescriptors(tmpFile.Name())
 	require.NoError(t, err)
@@ -225,12 +224,12 @@ func TestLoadFileDescriptors_InvalidData(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "invalid-*.pb.desc")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
-	
+
 	_, err = tmpFile.Write([]byte("invalid protobuf data"))
 	require.NoError(t, err)
 	err = tmpFile.Close()
 	require.NoError(t, err)
-	
+
 	loaded, err := LoadFileDescriptors(tmpFile.Name())
 	assert.Error(t, err)
 	assert.Nil(t, loaded)

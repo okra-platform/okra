@@ -48,10 +48,10 @@ type graphqlGateway struct {
 
 // namespaceHandler handles GraphQL requests for a specific namespace
 type namespaceHandler struct {
-	namespace    string
-	schema       *atomic.Value // holds *compiledSchema
-	services     map[string]*serviceInfo
-	servicesMu   sync.RWMutex
+	namespace  string
+	schema     *atomic.Value // holds *compiledSchema
+	services   map[string]*serviceInfo
+	servicesMu sync.RWMutex
 }
 
 type serviceInfo struct {
@@ -73,19 +73,19 @@ type graphqlRequest struct {
 }
 
 type graphqlResponse struct {
-	Data   interface{}     `json:"data,omitempty"`
+	Data   interface{}    `json:"data,omitempty"`
 	Errors []graphqlError `json:"errors,omitempty"`
 }
 
 type graphqlError struct {
 	Message    string                 `json:"message"`
-	Path       []interface{}         `json:"path,omitempty"`
+	Path       []interface{}          `json:"path,omitempty"`
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
 }
 
 func (g *graphqlGateway) Handler() http.Handler {
 	mux := http.NewServeMux()
-	
+
 	// Handle /graphql/{namespace} pattern
 	mux.HandleFunc("/graphql/", func(w http.ResponseWriter, r *http.Request) {
 		// Extract namespace from path
@@ -95,23 +95,23 @@ func (g *graphqlGateway) Handler() http.Handler {
 			http.Error(w, "namespace required", http.StatusBadRequest)
 			return
 		}
-		
+
 		namespace := parts[0]
-		
+
 		// Get namespace handler
 		g.mu.RLock()
 		handler, exists := g.namespaces[namespace]
 		g.mu.RUnlock()
-		
+
 		if !exists {
 			http.Error(w, fmt.Sprintf("namespace '%s' not found", namespace), http.StatusNotFound)
 			return
 		}
-		
+
 		// Handle GraphQL request
 		handler.ServeHTTP(w, r)
 	})
-	
+
 	return mux
 }
 
@@ -119,10 +119,10 @@ func (g *graphqlGateway) UpdateService(ctx context.Context, namespace string, se
 	if namespace == "" {
 		namespace = "default"
 	}
-	
+
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	// Get or create namespace handler
 	handler, exists := g.namespaces[namespace]
 	if !exists {
@@ -133,7 +133,7 @@ func (g *graphqlGateway) UpdateService(ctx context.Context, namespace string, se
 		}
 		g.namespaces[namespace] = handler
 	}
-	
+
 	// Update services
 	handler.servicesMu.Lock()
 	for _, service := range serviceSchema.Services {
@@ -143,7 +143,7 @@ func (g *graphqlGateway) UpdateService(ctx context.Context, namespace string, se
 		}
 	}
 	handler.servicesMu.Unlock()
-	
+
 	// Regenerate schema
 	return handler.regenerateSchema()
 }
@@ -151,7 +151,7 @@ func (g *graphqlGateway) UpdateService(ctx context.Context, namespace string, se
 func (g *graphqlGateway) RemoveService(ctx context.Context, namespace string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	delete(g.namespaces, namespace)
 	return nil
 }
@@ -159,7 +159,7 @@ func (g *graphqlGateway) RemoveService(ctx context.Context, namespace string) er
 func (g *graphqlGateway) Shutdown(ctx context.Context) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	
+
 	g.namespaces = make(map[string]*namespaceHandler)
 	return nil
 }
@@ -172,36 +172,36 @@ func (h *namespaceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.servePlayground(w, r)
 		return
 	}
-	
+
 	// Only accept POST requests for GraphQL queries
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	// Parse request
 	var req graphqlRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Get current schema
 	schemaVal := h.schema.Load()
 	if schemaVal == nil {
 		http.Error(w, "Schema not initialized", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	compiled := schemaVal.(*compiledSchema)
-	
+
 	// Parse the query
 	query, report := astparser.ParseGraphqlDocumentString(req.Query)
 	if report.HasErrors() {
 		h.sendErrorResponse(w, "Query parse error", fmt.Errorf("%s", report.Error()))
 		return
 	}
-	
+
 	// Validate the query against schema
 	validator := astvalidation.DefaultOperationValidator()
 	validator.Validate(&query, compiled.schemaDocument, &report)
@@ -209,14 +209,14 @@ func (h *namespaceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.sendErrorResponse(w, "Query validation error", fmt.Errorf("%s", report.Error()))
 		return
 	}
-	
+
 	// Execute the query
 	result, err := h.executeQuery(r.Context(), &query, req.Variables, req.OperationName)
 	if err != nil {
 		h.sendErrorResponse(w, "Query execution error", err)
 		return
 	}
-	
+
 	// Send response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
@@ -233,11 +233,11 @@ func (h *namespaceHandler) executeQuery(ctx context.Context, query *ast.Document
 			break
 		}
 	}
-	
+
 	if operation == nil {
 		return nil, fmt.Errorf("operation not found")
 	}
-	
+
 	// Execute based on operation type
 	switch operation.OperationType {
 	case ast.OperationTypeQuery:
@@ -253,18 +253,18 @@ func (h *namespaceHandler) executeQueryOperation(ctx context.Context, doc *ast.D
 	result := &graphqlResponse{
 		Data: make(map[string]interface{}),
 	}
-	
+
 	// Execute each selection in the query
 	if op.HasSelections {
 		for _, selection := range doc.SelectionSets[op.SelectionSet].SelectionRefs {
 			if err := h.executeSelection(ctx, doc, selection, result.Data.(map[string]interface{}), variables); err != nil {
-			result.Errors = append(result.Errors, graphqlError{
-				Message: err.Error(),
-			})
+				result.Errors = append(result.Errors, graphqlError{
+					Message: err.Error(),
+				})
 			}
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -275,23 +275,23 @@ func (h *namespaceHandler) executeMutationOperation(ctx context.Context, doc *as
 
 func (h *namespaceHandler) executeSelection(ctx context.Context, doc *ast.Document, selectionRef int, result map[string]interface{}, variables map[string]interface{}) error {
 	selection := doc.Selections[selectionRef]
-	
+
 	switch selection.Kind {
 	case ast.SelectionKindField:
 		field := doc.Fields[selection.Ref]
 		fieldName := doc.FieldNameString(selection.Ref)
-		
+
 		// Handle introspection fields
 		if strings.HasPrefix(fieldName, "__") {
 			return h.handleIntrospection(ctx, doc, &field, fieldName, result)
 		}
-		
+
 		// Handle empty fields
 		if fieldName == "_empty" {
 			result[fieldName] = nil
 			return nil
 		}
-		
+
 		// Extract arguments
 		args := make(map[string]interface{})
 		for _, argRef := range field.Arguments.Refs {
@@ -303,13 +303,13 @@ func (h *namespaceHandler) executeSelection(ctx context.Context, doc *ast.Docume
 			}
 			args[argName] = value
 		}
-		
+
 		// Execute field resolver
 		fieldResult, err := h.resolveField(ctx, fieldName, args)
 		if err != nil {
 			return err
 		}
-		
+
 		// Process sub-selections if any
 		if field.HasSelections {
 			subResult := make(map[string]interface{})
@@ -334,9 +334,9 @@ func (h *namespaceHandler) executeSelection(ctx context.Context, doc *ast.Docume
 		} else {
 			result[fieldName] = fieldResult
 		}
-		
+
 		return nil
-		
+
 	default:
 		return fmt.Errorf("unsupported selection kind")
 	}
@@ -346,10 +346,10 @@ func (h *namespaceHandler) resolveField(ctx context.Context, fieldName string, a
 	// Find the service and method for this field
 	h.servicesMu.RLock()
 	defer h.servicesMu.RUnlock()
-	
+
 	var targetService *serviceInfo
 	var methodName string
-	
+
 	// Look for the method in all services
 	for _, service := range h.services {
 		for _, svc := range service.schema.Services {
@@ -362,53 +362,53 @@ func (h *namespaceHandler) resolveField(ctx context.Context, fieldName string, a
 			}
 		}
 	}
-	
+
 found:
 	if targetService == nil {
 		return nil, fmt.Errorf("method %s not found", fieldName)
 	}
-	
+
 	// Get input from arguments
 	input, ok := args["input"]
 	if !ok {
 		return nil, fmt.Errorf("input argument required")
 	}
-	
+
 	// Convert input to JSON
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal input: %w", err)
 	}
-	
+
 	// Create service request
 	serviceRequest := &pb.ServiceRequest{
 		Method: methodName,
 		Input:  inputJSON,
 	}
-	
+
 	// Send request to actor
 	reply, err := actors.Ask(ctx, targetService.actorPID, serviceRequest, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("actor request failed: %w", err)
 	}
-	
+
 	// Cast response
 	serviceResponse, ok := reply.(*pb.ServiceResponse)
 	if !ok {
 		return nil, fmt.Errorf("invalid response type from actor")
 	}
-	
+
 	// Check for errors
 	if serviceResponse.Error != nil {
 		return nil, fmt.Errorf("%s", serviceResponse.Error.Message)
 	}
-	
+
 	// Parse response
 	var result interface{}
 	if err := json.Unmarshal(serviceResponse.Output, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-	
+
 	return result, nil
 }
 
@@ -488,7 +488,7 @@ func (h *namespaceHandler) sendErrorResponse(w http.ResponseWriter, message stri
 			Message: fmt.Sprintf("%s: %v", message, err),
 		}},
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK) // GraphQL errors are still 200 OK
 	json.NewEncoder(w).Encode(response)
@@ -502,33 +502,33 @@ func (h *namespaceHandler) regenerateSchema() error {
 		schemas = append(schemas, service.schema)
 	}
 	h.servicesMu.RUnlock()
-	
+
 	// Generate GraphQL schema
 	schemaStr, err := generateGraphQLSchema(h.namespace, schemas)
 	if err != nil {
 		return fmt.Errorf("failed to generate GraphQL schema: %w", err)
 	}
-	
+
 	// Parse the schema
 	doc, report := astparser.ParseGraphqlDocumentString(schemaStr)
 	if report.HasErrors() {
 		return fmt.Errorf("failed to parse GraphQL schema: %v", report)
 	}
-	
+
 	// Store compiled schema
 	compiled := &compiledSchema{
 		schemaDocument: &doc,
 		schemaString:   schemaStr,
 	}
 	h.schema.Store(compiled)
-	
+
 	return nil
 }
 
 // generateGraphQLSchema generates a GraphQL schema from OKRA schemas
 func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, error) {
 	var sb strings.Builder
-	
+
 	// Add scalar types first
 	sb.WriteString("# Built-in scalar types\n")
 	sb.WriteString("scalar String\n")
@@ -536,18 +536,18 @@ func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, 
 	sb.WriteString("scalar Float\n")
 	sb.WriteString("scalar Boolean\n")
 	sb.WriteString("scalar ID\n\n")
-	
+
 	// Start with schema definition
 	sb.WriteString("schema {\n")
 	sb.WriteString("  query: Query\n")
 	sb.WriteString("  mutation: Mutation\n")
 	sb.WriteString("}\n\n")
-	
+
 	// Generate type definitions
 	typeMap := make(map[string]bool)
 	var queryFields []string
 	var mutationFields []string
-	
+
 	for _, s := range schemas {
 		// Generate enum types
 		for _, enum := range s.Enums {
@@ -556,7 +556,7 @@ func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, 
 				typeMap[enum.Name] = true
 			}
 		}
-		
+
 		// Generate object types
 		for _, typ := range s.Types {
 			if !typeMap[typ.Name] {
@@ -564,12 +564,12 @@ func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, 
 				typeMap[typ.Name] = true
 			}
 		}
-		
+
 		// Generate service methods as fields
 		for _, service := range s.Services {
 			for _, method := range service.Methods {
 				field := generateMethodField(&method)
-				
+
 				if isQueryMethod(method.Name) {
 					queryFields = append(queryFields, field)
 				} else {
@@ -578,15 +578,15 @@ func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, 
 			}
 		}
 	}
-	
+
 	// Generate Query type
 	sb.WriteString("type Query {\n")
-	
+
 	// Add introspection fields
 	sb.WriteString("  __schema: __Schema!\n")
 	sb.WriteString("  __type(name: String!): __Type\n")
 	sb.WriteString("  __typename: String!\n")
-	
+
 	if len(queryFields) == 0 {
 		sb.WriteString("  _empty: String\n")
 	} else {
@@ -597,7 +597,7 @@ func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, 
 		}
 	}
 	sb.WriteString("}\n\n")
-	
+
 	// Generate Mutation type
 	sb.WriteString("type Mutation {\n")
 	if len(mutationFields) == 0 {
@@ -610,7 +610,7 @@ func generateGraphQLSchema(namespace string, schemas []*schema.Schema) (string, 
 		}
 	}
 	sb.WriteString("}\n\n")
-	
+
 	// Add introspection types
 	sb.WriteString(`# Introspection types
 type __Schema {
@@ -695,7 +695,7 @@ enum __DirectiveLocation {
   INPUT_FIELD_DEFINITION
 }
 `)
-	
+
 	return sb.String(), nil
 }
 
@@ -719,26 +719,26 @@ func generateObjectType(sb *strings.Builder, typ *schema.ObjectType) {
 	if typ.Doc != "" {
 		sb.WriteString(fmt.Sprintf("\"\"\"%s\"\"\"\n", typ.Doc))
 	}
-	
+
 	// Determine if this should be an input type
 	isInput := strings.HasSuffix(typ.Name, "Request") || strings.HasSuffix(typ.Name, "Input")
-	
+
 	if isInput {
 		sb.WriteString(fmt.Sprintf("input %sInput {\n", strings.TrimSuffix(strings.TrimSuffix(typ.Name, "Request"), "Input")))
 	} else {
 		sb.WriteString(fmt.Sprintf("type %s {\n", typ.Name))
 	}
-	
+
 	for _, field := range typ.Fields {
 		if field.Doc != "" {
 			sb.WriteString(fmt.Sprintf("  \"\"\"%s\"\"\"\n", field.Doc))
 		}
-		
+
 		fieldType := mapToGraphQLType(field.Type)
 		if field.Required {
 			fieldType += "!"
 		}
-		
+
 		sb.WriteString(fmt.Sprintf("  %s: %s\n", field.Name, fieldType))
 	}
 	sb.WriteString("}\n\n")
@@ -750,9 +750,9 @@ func generateMethodField(method *schema.Method) string {
 	if strings.HasSuffix(inputType, "Request") {
 		inputType = strings.TrimSuffix(inputType, "Request") + "Input"
 	}
-	
+
 	outputType := mapToGraphQLType(method.OutputType)
-	
+
 	return fmt.Sprintf("%s(input: %s!): %s", method.Name, inputType, outputType)
 }
 
@@ -763,7 +763,7 @@ func mapToGraphQLType(okraType string) string {
 		baseType := strings.TrimSuffix(okraType, "[]")
 		return fmt.Sprintf("[%s]", mapToGraphQLType(baseType))
 	}
-	
+
 	switch okraType {
 	case "String":
 		return "String"
@@ -791,13 +791,13 @@ func mapToGraphQLType(okraType string) string {
 func isQueryMethod(methodName string) bool {
 	queryPrefixes := []string{"get", "list", "find", "search", "query", "fetch", "read"}
 	methodLower := strings.ToLower(methodName)
-	
+
 	for _, prefix := range queryPrefixes {
 		if strings.HasPrefix(methodLower, prefix) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -805,7 +805,7 @@ func isQueryMethod(methodName string) bool {
 func (h *namespaceHandler) servePlayground(w http.ResponseWriter, r *http.Request) {
 	// Get the endpoint URL from the request
 	endpoint := r.URL.Path
-	
+
 	playgroundHTML := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
@@ -845,7 +845,7 @@ func (h *namespaceHandler) servePlayground(w http.ResponseWriter, r *http.Reques
 </body>
 </html>
 `, h.namespace, endpoint, h.namespace)
-	
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(playgroundHTML))
@@ -858,9 +858,9 @@ func (h *namespaceHandler) handleSchemaIntrospection(ctx context.Context, doc *a
 	if schemaVal == nil {
 		return fmt.Errorf("schema not initialized")
 	}
-	
+
 	_ = schemaVal.(*compiledSchema) // Ensure schema is compiled
-	
+
 	// Return introspection schema structure
 	schemaInfo := map[string]interface{}{
 		"queryType": map[string]interface{}{
@@ -869,10 +869,10 @@ func (h *namespaceHandler) handleSchemaIntrospection(ctx context.Context, doc *a
 		"mutationType": map[string]interface{}{
 			"name": "Mutation",
 		},
-		"types": h.getSchemaTypes(),
+		"types":      h.getSchemaTypes(),
 		"directives": []interface{}{},
 	}
-	
+
 	result["__schema"] = schemaInfo
 	return nil
 }
@@ -890,12 +890,12 @@ func (h *namespaceHandler) handleTypeIntrospection(ctx context.Context, doc *ast
 			}
 		}
 	}
-	
+
 	if typeName == "" {
 		result["__type"] = nil
 		return nil
 	}
-	
+
 	// Find the type in our schema
 	typeInfo := h.findType(typeName)
 	result["__type"] = typeInfo
@@ -906,36 +906,36 @@ func (h *namespaceHandler) handleTypeIntrospection(ctx context.Context, doc *ast
 func (h *namespaceHandler) getSchemaTypes() []interface{} {
 	h.servicesMu.RLock()
 	defer h.servicesMu.RUnlock()
-	
+
 	types := []interface{}{
 		// Built-in types
 		map[string]interface{}{
-			"kind": "SCALAR",
-			"name": "String",
+			"kind":        "SCALAR",
+			"name":        "String",
 			"description": "The String scalar type",
 		},
 		map[string]interface{}{
-			"kind": "SCALAR",
-			"name": "Int",
+			"kind":        "SCALAR",
+			"name":        "Int",
 			"description": "The Int scalar type",
 		},
 		map[string]interface{}{
-			"kind": "SCALAR",
-			"name": "Float",
+			"kind":        "SCALAR",
+			"name":        "Float",
 			"description": "The Float scalar type",
 		},
 		map[string]interface{}{
-			"kind": "SCALAR",
-			"name": "Boolean",
+			"kind":        "SCALAR",
+			"name":        "Boolean",
 			"description": "The Boolean scalar type",
 		},
 		map[string]interface{}{
-			"kind": "SCALAR",
-			"name": "ID",
+			"kind":        "SCALAR",
+			"name":        "ID",
 			"description": "The ID scalar type",
 		},
 	}
-	
+
 	// Add custom types from all services
 	typeMap := make(map[string]bool)
 	for _, service := range h.services {
@@ -945,64 +945,64 @@ func (h *namespaceHandler) getSchemaTypes() []interface{} {
 				continue
 			}
 			typeMap[typ.Name] = true
-			
+
 			isInput := strings.HasSuffix(typ.Name, "Request") || strings.HasSuffix(typ.Name, "Input")
 			typeName := typ.Name
 			if isInput {
 				typeName = strings.TrimSuffix(strings.TrimSuffix(typ.Name, "Request"), "Input") + "Input"
 			}
-			
+
 			fields := make([]interface{}, 0, len(typ.Fields))
 			for _, field := range typ.Fields {
 				fieldType := mapToGraphQLType(field.Type)
 				fields = append(fields, map[string]interface{}{
-					"name": field.Name,
-					"type": h.buildTypeRef(fieldType, field.Required),
+					"name":        field.Name,
+					"type":        h.buildTypeRef(fieldType, field.Required),
 					"description": field.Doc,
 				})
 			}
-			
+
 			kind := "OBJECT"
 			if isInput {
 				kind = "INPUT_OBJECT"
 			}
-			
+
 			types = append(types, map[string]interface{}{
-				"kind": kind,
-				"name": typeName,
+				"kind":        kind,
+				"name":        typeName,
 				"description": typ.Doc,
-				"fields": fields,
+				"fields":      fields,
 				"inputFields": fields, // For INPUT_OBJECT types
 			})
 		}
-		
+
 		// Add enum types
 		for _, enum := range service.schema.Enums {
 			if typeMap[enum.Name] {
 				continue
 			}
 			typeMap[enum.Name] = true
-			
+
 			values := make([]interface{}, 0, len(enum.Values))
 			for _, val := range enum.Values {
 				values = append(values, map[string]interface{}{
-					"name": val.Name,
+					"name":        val.Name,
 					"description": val.Doc,
 				})
 			}
-			
+
 			types = append(types, map[string]interface{}{
-				"kind": "ENUM",
-				"name": enum.Name,
+				"kind":        "ENUM",
+				"name":        enum.Name,
 				"description": enum.Doc,
-				"enumValues": values,
+				"enumValues":  values,
 			})
 		}
 	}
-	
+
 	// Add Query and Mutation types
 	types = append(types, h.buildQueryType(), h.buildMutationType())
-	
+
 	return types
 }
 
@@ -1040,7 +1040,7 @@ func (h *namespaceHandler) buildQueryType() map[string]interface{} {
 			},
 		},
 	}
-	
+
 	// Add query methods
 	h.servicesMu.RLock()
 	for _, service := range h.services {
@@ -1051,7 +1051,7 @@ func (h *namespaceHandler) buildQueryType() map[string]interface{} {
 					if strings.HasSuffix(inputType, "Request") {
 						inputType = strings.TrimSuffix(inputType, "Request") + "Input"
 					}
-					
+
 					fields = append(fields, map[string]interface{}{
 						"name": method.Name,
 						"type": h.buildTypeRef(method.OutputType, false),
@@ -1073,10 +1073,10 @@ func (h *namespaceHandler) buildQueryType() map[string]interface{} {
 		}
 	}
 	h.servicesMu.RUnlock()
-	
+
 	return map[string]interface{}{
-		"kind": "OBJECT",
-		"name": "Query",
+		"kind":   "OBJECT",
+		"name":   "Query",
 		"fields": fields,
 	}
 }
@@ -1084,7 +1084,7 @@ func (h *namespaceHandler) buildQueryType() map[string]interface{} {
 // buildMutationType builds the Mutation type for introspection
 func (h *namespaceHandler) buildMutationType() map[string]interface{} {
 	fields := []interface{}{}
-	
+
 	// Add mutation methods
 	h.servicesMu.RLock()
 	for _, service := range h.services {
@@ -1095,7 +1095,7 @@ func (h *namespaceHandler) buildMutationType() map[string]interface{} {
 					if strings.HasSuffix(inputType, "Request") {
 						inputType = strings.TrimSuffix(inputType, "Request") + "Input"
 					}
-					
+
 					fields = append(fields, map[string]interface{}{
 						"name": method.Name,
 						"type": h.buildTypeRef(method.OutputType, false),
@@ -1117,7 +1117,7 @@ func (h *namespaceHandler) buildMutationType() map[string]interface{} {
 		}
 	}
 	h.servicesMu.RUnlock()
-	
+
 	if len(fields) == 0 {
 		fields = append(fields, map[string]interface{}{
 			"name": "_empty",
@@ -1127,10 +1127,10 @@ func (h *namespaceHandler) buildMutationType() map[string]interface{} {
 			},
 		})
 	}
-	
+
 	return map[string]interface{}{
-		"kind": "OBJECT",
-		"name": "Mutation",
+		"kind":   "OBJECT",
+		"name":   "Mutation",
 		"fields": fields,
 	}
 }
@@ -1141,39 +1141,39 @@ func (h *namespaceHandler) buildTypeRef(typeName string, required bool) map[stri
 	if strings.HasSuffix(typeName, "[]") {
 		baseType := strings.TrimSuffix(typeName, "[]")
 		listType := map[string]interface{}{
-			"kind": "LIST",
+			"kind":   "LIST",
 			"ofType": h.buildTypeRef(baseType, false),
 		}
 		if required {
 			return map[string]interface{}{
-				"kind": "NON_NULL",
+				"kind":   "NON_NULL",
 				"ofType": listType,
 			}
 		}
 		return listType
 	}
-	
+
 	// Map to GraphQL type
 	gqlType := mapToGraphQLType(typeName)
-	
+
 	typeRef := map[string]interface{}{
 		"kind": "SCALAR",
 		"name": gqlType,
 	}
-	
+
 	// Check if it's a custom type
 	if gqlType == typeName {
 		// It's not a built-in scalar, so it's likely an object type
 		typeRef["kind"] = "OBJECT"
 	}
-	
+
 	if required {
 		return map[string]interface{}{
-			"kind": "NON_NULL",
+			"kind":   "NON_NULL",
 			"ofType": typeRef,
 		}
 	}
-	
+
 	return typeRef
 }
 
@@ -1191,11 +1191,11 @@ func (h *namespaceHandler) findType(typeName string) map[string]interface{} {
 	case "Mutation":
 		return h.buildMutationType()
 	}
-	
+
 	// Check custom types
 	h.servicesMu.RLock()
 	defer h.servicesMu.RUnlock()
-	
+
 	for _, service := range h.services {
 		// Check object types
 		for _, typ := range service.schema.Types {
@@ -1207,15 +1207,15 @@ func (h *namespaceHandler) findType(typeName string) map[string]interface{} {
 						"type": h.buildTypeRef(field.Type, field.Required),
 					})
 				}
-				
+
 				return map[string]interface{}{
-					"kind": "OBJECT",
-					"name": typ.Name,
+					"kind":   "OBJECT",
+					"name":   typ.Name,
 					"fields": fields,
 				}
 			}
 		}
-		
+
 		// Check enum types
 		for _, enum := range service.schema.Enums {
 			if enum.Name == typeName {
@@ -1225,15 +1225,15 @@ func (h *namespaceHandler) findType(typeName string) map[string]interface{} {
 						"name": val.Name,
 					})
 				}
-				
+
 				return map[string]interface{}{
-					"kind": "ENUM",
-					"name": enum.Name,
+					"kind":       "ENUM",
+					"name":       enum.Name,
 					"enumValues": values,
 				}
 			}
 		}
 	}
-	
+
 	return nil
 }

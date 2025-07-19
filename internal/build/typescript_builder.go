@@ -14,6 +14,7 @@ import (
 )
 
 // Embed the template files
+//
 //go:embed templates/typescript/javy-runtime.ts
 var javyRuntimeTemplate string
 
@@ -103,14 +104,14 @@ func (b *TypeScriptBuilder) checkDependencies() error {
 // getServiceMethods extracts method names from the parsed schema
 func (b *TypeScriptBuilder) getServiceMethods() []string {
 	methods := []string{}
-	
+
 	// Get all methods from all services in the schema
 	for _, service := range b.schema.Services {
 		for _, method := range service.Methods {
 			methods = append(methods, method.Name)
 		}
 	}
-	
+
 	return methods
 }
 
@@ -145,7 +146,7 @@ func (b *TypeScriptBuilder) generateWrapper(outputPath string, methods []string)
 	if !strings.HasPrefix(relPath, ".") {
 		relPath = "./" + relPath
 	}
-	
+
 	// Create template data
 	data := struct {
 		UserModulePath string
@@ -177,7 +178,7 @@ func (b *TypeScriptBuilder) generateWrapper(outputPath string, methods []string)
 // runESBuild executes the ESBuild bundler
 func (b *TypeScriptBuilder) runESBuild(tmpDir, outputPath string) error {
 	wrapperPath := filepath.Join(tmpDir, "service.wrapper.ts")
-	
+
 	args := []string{
 		"esbuild",
 		wrapperPath,
@@ -197,7 +198,7 @@ func (b *TypeScriptBuilder) runESBuild(tmpDir, outputPath string) error {
 
 	cmd := exec.Command("npx", args...)
 	cmd.Dir = b.projectRoot // Run from project root for node_modules access
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ESBuild error: %s\n%s", err, string(output))
@@ -209,7 +210,7 @@ func (b *TypeScriptBuilder) runESBuild(tmpDir, outputPath string) error {
 // runJavy executes the Javy compiler
 func (b *TypeScriptBuilder) runJavy(inputPath, outputPath string) error {
 	cmd := exec.Command("javy", "compile", inputPath, "-o", outputPath)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Javy error: %s\n%s", err, string(output))

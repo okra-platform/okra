@@ -30,23 +30,23 @@ func TestNewAdminServer(t *testing.T) {
 
 func TestAdminServer_HandleHealth(t *testing.T) {
 	// Test: Health endpoint returns healthy status
-	
+
 	server := &adminServer{
 		deployedServices: make(map[string]*DeployedService),
 	}
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	w := httptest.NewRecorder()
-	
+
 	server.handleHealth(w, req)
-	
+
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-	
+
 	var response map[string]string
 	err := json.NewDecoder(w.Body).Decode(&response)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "healthy", response["status"])
 	assert.NotEmpty(t, response["time"])
 }
@@ -59,11 +59,11 @@ func TestAdminServer_HandleDeploy_Success(t *testing.T) {
 
 func TestAdminServer_HandleDeploy_InvalidRequest(t *testing.T) {
 	// Test: Deploy endpoint rejects invalid requests
-	
+
 	server := &adminServer{
 		deployedServices: make(map[string]*DeployedService),
 	}
-	
+
 	tests := []struct {
 		name       string
 		body       string
@@ -80,16 +80,16 @@ func TestAdminServer_HandleDeploy_InvalidRequest(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/packages/deploy", 
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/packages/deploy",
 				bytes.NewReader([]byte(tt.body)))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
-			
+
 			server.handleDeploy(w, req)
-			
+
 			assert.Equal(t, tt.wantStatus, w.Code)
 		})
 	}
@@ -97,7 +97,7 @@ func TestAdminServer_HandleDeploy_InvalidRequest(t *testing.T) {
 
 func TestAdminServer_HandleListServices(t *testing.T) {
 	// Test: List services returns all deployed services
-	
+
 	server := &adminServer{
 		deployedServices: map[string]*DeployedService{
 			"test.Service1.v1": {
@@ -112,19 +112,19 @@ func TestAdminServer_HandleListServices(t *testing.T) {
 			},
 		},
 	}
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/packages", nil)
 	w := httptest.NewRecorder()
-	
+
 	server.handleListServices(w, req)
-	
+
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-	
+
 	var response ListServicesResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	require.NoError(t, err)
-	
+
 	assert.Len(t, response.Services, 2)
 }
 
@@ -136,22 +136,22 @@ func TestAdminServer_HandleUndeploy_Success(t *testing.T) {
 
 func TestAdminServer_HandleUndeploy_NotFound(t *testing.T) {
 	// Test: Undeploy returns 404 for non-existent service
-	
+
 	server := &adminServer{
 		deployedServices: make(map[string]*DeployedService),
 	}
-	
+
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/packages/non.existent.service", nil)
 	w := httptest.NewRecorder()
-	
+
 	server.handleUndeploy(w, req)
-	
+
 	assert.Equal(t, http.StatusNotFound, w.Code)
-	
+
 	var response ErrorResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "service not found", response.Error)
 }
 

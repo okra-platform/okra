@@ -31,7 +31,7 @@ func (c *Controller) Serve(ctx context.Context, opts ...ServeOptions) error {
 	// Use provided options or defaults
 	servicePort := defaultServicePort
 	adminPort := defaultAdminPort
-	
+
 	if len(opts) > 0 {
 		if opts[0].ServicePort > 0 {
 			servicePort = opts[0].ServicePort
@@ -75,17 +75,17 @@ func (c *Controller) Serve(ctx context.Context, opts ...ServeOptions) error {
 	go func() {
 		defer wg.Done()
 		fmt.Printf("Starting service gateway on port %d...\n", servicePort)
-		
+
 		// Create HTTP server for both gateways
 		mux := http.NewServeMux()
 		mux.Handle("/connect/", connectGateway.Handler())
 		mux.Handle("/graphql/", graphqlGateway.Handler())
-		
+
 		gatewayServer := &http.Server{
 			Addr:    fmt.Sprintf(":%d", servicePort),
 			Handler: mux,
 		}
-		
+
 		if err := gatewayServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errChan <- fmt.Errorf("service gateway error: %w", err)
 		}
@@ -120,7 +120,7 @@ func (c *Controller) Serve(ctx context.Context, opts ...ServeOptions) error {
 
 	// Wait for servers to stop
 	wg.Wait()
-	
+
 	fmt.Println("Serve shutdown complete")
 	return nil
 }

@@ -62,7 +62,7 @@ go 1.21`),
 	// Create service directory
 	serviceDir := filepath.Join(tmpDir, "service")
 	require.NoError(t, os.MkdirAll(serviceDir, 0755))
-	
+
 	// Create service implementation in service package
 	require.NoError(t, os.WriteFile(
 		filepath.Join(serviceDir, "service.go"),
@@ -93,11 +93,11 @@ func (s *mathService) Add(input *types.AddInput) (*types.AddOutput, error) {
 
 	// Run build (code generation + WASM compilation)
 	err = server.build()
-	
+
 	// Check if TinyGo is available or has compilation issues
 	if err != nil {
-		if os.IsNotExist(err) || 
-			contains(err.Error(), "tinygo") || 
+		if os.IsNotExist(err) ||
+			contains(err.Error(), "tinygo") ||
 			contains(err.Error(), "executable file not found") ||
 			contains(err.Error(), "is a program, not an importable package") {
 			t.Skip("TinyGo not available or has compilation issues, skipping integration test")
@@ -108,7 +108,7 @@ func (s *mathService) Add(input *types.AddInput) (*types.AddOutput, error) {
 	// Verify interface was generated
 	interfacePath := filepath.Join(tmpDir, "types", "interface.go")
 	assert.FileExists(t, interfacePath)
-	
+
 	if _, err := os.Stat(interfacePath); err == nil {
 		content, _ := os.ReadFile(interfacePath)
 		contentStr := string(content)

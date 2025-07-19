@@ -13,10 +13,10 @@ func TestGenerator_EmptySchema(t *testing.T) {
 	// Test: Empty schema generates minimal valid Go code
 	g := NewGenerator("example")
 	s := &schema.Schema{}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "package example")
 	assert.NotContains(t, result, "import")
@@ -40,10 +40,10 @@ func TestGenerator_BasicTypes(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "package models")
 	assert.Contains(t, result, "// User represents a system user")
@@ -71,10 +71,10 @@ func TestGenerator_Enums(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "type Status string")
 	assert.Contains(t, result, "const (")
@@ -112,10 +112,10 @@ func TestGenerator_Services(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "// UserService manages user operations")
 	assert.Contains(t, result, "type UserService interface {")
@@ -140,10 +140,10 @@ func TestGenerator_ArrayTypes(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "Members []string `json:\"members\"`")
 	assert.Contains(t, result, "Tags *[]string `json:\"tags,omitempty\"`")
@@ -153,7 +153,7 @@ func TestGenerator_ArrayTypes(t *testing.T) {
 func TestGenerator_TypeMapping(t *testing.T) {
 	// Test: Verify type mapping works correctly
 	g := NewGenerator("types")
-	
+
 	tests := []struct {
 		okraType string
 		required bool
@@ -175,7 +175,7 @@ func TestGenerator_TypeMapping(t *testing.T) {
 		{"[String]", true, "[]string"},
 		{"[CustomType]", true, "[]CustomType"},
 	}
-	
+
 	for _, tt := range tests {
 		result := g.mapToGoType(tt.okraType, tt.required)
 		assert.Equal(t, tt.expected, result, "Failed for type %s (required=%v)", tt.okraType, tt.required)
@@ -195,10 +195,10 @@ func TestGenerator_TimeImport(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	assert.Contains(t, result, "import (")
 	assert.Contains(t, result, "\"time\"")
@@ -268,35 +268,34 @@ func TestGenerator_CompleteExample(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
-	
+
 	// Check structure
 	assert.Contains(t, result, "package api")
 	assert.Contains(t, result, "import (")
 	assert.Contains(t, result, "\"time\"")
-	
+
 	// Check enum
 	assert.Contains(t, result, "type Role string")
 	assert.Contains(t, result, "RoleAdmin Role = \"Admin\"")
-	
+
 	// Check types
 	assert.Contains(t, result, "type User struct")
 	assert.Contains(t, result, "type GetUserRequest struct")
-	
+
 	// Check service
 	assert.Contains(t, result, "type UserService interface")
 	assert.Contains(t, result, "GetUser(input *GetUserRequest) (*User, error)")
 }
 
-
 func TestGenerator_FieldNameExport(t *testing.T) {
 	// Test: Field names are properly exported
 	g := NewGenerator("test")
-	
+
 	tests := []struct {
 		input    string
 		expected string
@@ -308,7 +307,7 @@ func TestGenerator_FieldNameExport(t *testing.T) {
 		{"xmlData", "XmlData"},
 		{"", ""},
 	}
-	
+
 	for _, tt := range tests {
 		result := g.exportedName(tt.input)
 		assert.Equal(t, tt.expected, result, "Failed for input: %s", tt.input)
@@ -329,13 +328,13 @@ func TestGenerator_EmptyDocComment(t *testing.T) {
 			},
 		},
 	}
-	
+
 	code, err := g.Generate(s)
 	require.NoError(t, err)
-	
+
 	result := string(code)
 	lines := strings.Split(result, "\n")
-	
+
 	// Find the type declaration
 	for i, line := range lines {
 		if strings.Contains(line, "type NoDoc struct") {

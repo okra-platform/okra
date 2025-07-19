@@ -38,7 +38,7 @@ func TestConnectGateway_Handler(t *testing.T) {
 	gateway := NewConnectGateway()
 	handler := gateway.Handler()
 	assert.NotNil(t, handler)
-	
+
 	// Test that handler can be used with http server
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
@@ -51,7 +51,7 @@ func TestConnectGateway_UpdateService(t *testing.T) {
 	// Test: UpdateService with valid descriptors
 	gateway := NewConnectGateway()
 	ctx := context.Background()
-	
+
 	// Create a simple FileDescriptorSet
 	fds := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
@@ -95,7 +95,7 @@ func TestConnectGateway_UpdateService(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Create a mock actor PID
 	actorSystem, err := actors.NewActorSystem("test-system",
 		actors.WithExpireActorAfter(1*time.Minute))
@@ -103,12 +103,12 @@ func TestConnectGateway_UpdateService(t *testing.T) {
 	err = actorSystem.Start(ctx)
 	require.NoError(t, err)
 	defer actorSystem.Stop(ctx)
-	
+
 	// Create a simple actor
 	actor := &testActor{}
 	pid, err := actorSystem.Spawn(ctx, "test-actor", actor)
 	require.NoError(t, err)
-	
+
 	err = gateway.UpdateService(ctx, "TestService", fds, pid)
 	require.NoError(t, err)
 }
@@ -124,7 +124,7 @@ func TestConnectGateway_UpdateServiceMissingService(t *testing.T) {
 	// Test: UpdateService with non-existent service name
 	gateway := NewConnectGateway()
 	ctx := context.Background()
-	
+
 	fds := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
 			{
@@ -138,18 +138,18 @@ func TestConnectGateway_UpdateServiceMissingService(t *testing.T) {
 			},
 		},
 	}
-	
+
 	actorSystem, err := actors.NewActorSystem("test-system-2",
 		actors.WithExpireActorAfter(1*time.Minute))
 	require.NoError(t, err)
 	err = actorSystem.Start(ctx)
 	require.NoError(t, err)
 	defer actorSystem.Stop(ctx)
-	
+
 	actor := &testActor{}
 	pid, err := actorSystem.Spawn(ctx, "test-actor-2", actor)
 	require.NoError(t, err)
-	
+
 	err = gateway.UpdateService(ctx, "TestService", fds, pid)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "service TestService not found")
@@ -159,7 +159,7 @@ func TestConnectGateway_UpdateServiceInvalidDescriptors(t *testing.T) {
 	// Test: UpdateService with invalid descriptors
 	gateway := NewConnectGateway()
 	ctx := context.Background()
-	
+
 	// Create invalid descriptors with missing required fields
 	fds := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
@@ -169,18 +169,18 @@ func TestConnectGateway_UpdateServiceInvalidDescriptors(t *testing.T) {
 			},
 		},
 	}
-	
+
 	actorSystem, err := actors.NewActorSystem("test-system-2",
 		actors.WithExpireActorAfter(1*time.Minute))
 	require.NoError(t, err)
 	err = actorSystem.Start(ctx)
 	require.NoError(t, err)
 	defer actorSystem.Stop(ctx)
-	
+
 	actor := &testActor{}
 	pid, err := actorSystem.Spawn(ctx, "test-actor-2", actor)
 	require.NoError(t, err)
-	
+
 	err = gateway.UpdateService(ctx, "TestService", fds, pid)
 	assert.Error(t, err)
 }
@@ -189,7 +189,7 @@ func TestConnectGateway_Shutdown(t *testing.T) {
 	// Test: Shutdown clears services
 	gateway := NewConnectGateway()
 	ctx := context.Background()
-	
+
 	// First add a service
 	fds := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
@@ -204,25 +204,25 @@ func TestConnectGateway_Shutdown(t *testing.T) {
 			},
 		},
 	}
-	
+
 	actorSystem, err := actors.NewActorSystem("test-system-2",
 		actors.WithExpireActorAfter(1*time.Minute))
 	require.NoError(t, err)
 	err = actorSystem.Start(ctx)
 	require.NoError(t, err)
 	defer actorSystem.Stop(ctx)
-	
+
 	actor := &testActor{}
 	pid, err := actorSystem.Spawn(ctx, "test-actor-2", actor)
 	require.NoError(t, err)
-	
+
 	err = gateway.UpdateService(ctx, "TestService", fds, pid)
 	require.NoError(t, err)
-	
+
 	// Shutdown
 	err = gateway.Shutdown(ctx)
 	assert.NoError(t, err)
-	
+
 	// Verify services are cleared by checking internal state
 	cg := gateway.(*connectGateway)
 	cg.mu.RLock()
@@ -234,7 +234,7 @@ func TestConnectGateway_ConcurrentAccess(t *testing.T) {
 	// Test: Concurrent access is safe
 	gateway := NewConnectGateway()
 	ctx := context.Background()
-	
+
 	fds := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
 			{
@@ -248,21 +248,21 @@ func TestConnectGateway_ConcurrentAccess(t *testing.T) {
 			},
 		},
 	}
-	
+
 	actorSystem, err := actors.NewActorSystem("test-system-5",
 		actors.WithExpireActorAfter(1*time.Minute))
 	require.NoError(t, err)
 	err = actorSystem.Start(ctx)
 	require.NoError(t, err)
 	defer actorSystem.Stop(ctx)
-	
+
 	// Run concurrent operations
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func(idx int) {
 			actor := &testActor{}
 			pid, _ := actorSystem.Spawn(ctx, fmt.Sprintf("test-actor-%d", idx), actor)
-			
+
 			// Mix of operations
 			_ = gateway.Handler()
 			if idx == 0 {
@@ -272,12 +272,12 @@ func TestConnectGateway_ConcurrentAccess(t *testing.T) {
 			done <- true
 		}(i)
 	}
-	
+
 	// Wait for all goroutines
 	for i := 0; i < 10; i++ {
 		<-done
 	}
-	
+
 	// If we get here without panic, concurrent access is safe
 	assert.True(t, true)
 }
@@ -294,7 +294,7 @@ func int32Ptr(v int32) *int32 {
 func TestConnectGateway_HTTPHandler(t *testing.T) {
 	gateway := NewConnectGateway()
 	ctx := context.Background()
-	
+
 	// Create a simple file descriptor set with a test service
 	fds := &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
@@ -338,7 +338,7 @@ func TestConnectGateway_HTTPHandler(t *testing.T) {
 			},
 		},
 	}
-	
+
 	// Create actor system and test actor
 	actorSystem, err := actors.NewActorSystem("test-http-system",
 		actors.WithExpireActorAfter(1*time.Minute))
@@ -346,19 +346,19 @@ func TestConnectGateway_HTTPHandler(t *testing.T) {
 	err = actorSystem.Start(ctx)
 	require.NoError(t, err)
 	defer actorSystem.Stop(ctx)
-	
+
 	// Create an actor that responds to requests
 	actor := &httpTestActor{}
 	pid, err := actorSystem.Spawn(ctx, "test-http-actor", actor)
 	require.NoError(t, err)
-	
+
 	// Update service with the actor
 	err = gateway.UpdateService(ctx, "TestService", fds, pid)
 	require.NoError(t, err)
-	
+
 	// Get the handler
 	handler := gateway.Handler()
-	
+
 	tests := []struct {
 		name           string
 		method         string
@@ -379,7 +379,7 @@ func TestConnectGateway_HTTPHandler(t *testing.T) {
 		},
 		{
 			name:           "successful Connect JSON request",
-			method:         "POST", 
+			method:         "POST",
 			path:           "/testpkg.TestService/TestMethod",
 			contentType:    "application/connect+json",
 			body:           `{"message":"hello connect"}`,
@@ -411,19 +411,19 @@ func TestConnectGateway_HTTPHandler(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}
-			
+
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
-			
+
 			assert.Equal(t, tt.expectedStatus, rec.Code, "unexpected status code")
-			
+
 			if tt.expectedBody != "" {
 				assert.JSONEq(t, tt.expectedBody, rec.Body.String(), "unexpected response body")
 			}
@@ -452,7 +452,7 @@ func (a *httpTestActor) Receive(ctx *actors.ReceiveContext) {
 			})
 			return
 		}
-		
+
 		// Check for error trigger
 		if message, ok := input["message"].(string); ok && message == "error" {
 			ctx.Response(&pb.ServiceResponse{
@@ -464,16 +464,258 @@ func (a *httpTestActor) Receive(ctx *actors.ReceiveContext) {
 			})
 			return
 		}
-		
+
 		// Echo the message
 		output := map[string]interface{}{
 			"result": "echo: " + input["message"].(string),
 		}
 		outputBytes, _ := json.Marshal(output)
-		
+
 		ctx.Response(&pb.ServiceResponse{
 			Success: true,
 			Output:  outputBytes,
 		})
+	}
+}
+
+// Test: Oversized request handling
+func TestConnectGateway_OversizedRequest(t *testing.T) {
+	gateway := NewConnectGateway()
+	ctx := context.Background()
+
+	// Setup service
+	fds := createTestServiceDescriptor()
+	actorSystem, err := actors.NewActorSystem("test-oversized",
+		actors.WithExpireActorAfter(1*time.Minute))
+	require.NoError(t, err)
+	err = actorSystem.Start(ctx)
+	require.NoError(t, err)
+	defer actorSystem.Stop(ctx)
+
+	actor := &httpTestActor{}
+	pid, err := actorSystem.Spawn(ctx, "test-oversized-actor", actor)
+	require.NoError(t, err)
+
+	err = gateway.UpdateService(ctx, "TestService", fds, pid)
+	require.NoError(t, err)
+
+	// Create oversized request (>10MB)
+	largeMessage := strings.Repeat("a", 11*1024*1024)
+	body := fmt.Sprintf(`{"message":"%s"}`, largeMessage)
+	
+	req := httptest.NewRequest("POST", "/testpkg.TestService/TestMethod", 
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gateway.Handler().ServeHTTP(rec, req)
+	
+	// Should reject oversized request
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+}
+
+// Test: Context cancellation during request
+func TestConnectGateway_ContextCancellation(t *testing.T) {
+	gateway := NewConnectGateway()
+	ctx := context.Background()
+
+	// Setup service with slow actor
+	fds := createTestServiceDescriptor()
+	actorSystem, err := actors.NewActorSystem("test-cancel",
+		actors.WithExpireActorAfter(1*time.Minute))
+	require.NoError(t, err)
+	err = actorSystem.Start(ctx)
+	require.NoError(t, err)
+	defer actorSystem.Stop(ctx)
+
+	actor := &slowActor{delay: 500 * time.Millisecond}
+	pid, err := actorSystem.Spawn(ctx, "test-cancel-actor", actor)
+	require.NoError(t, err)
+
+	err = gateway.UpdateService(ctx, "TestService", fds, pid)
+	require.NoError(t, err)
+
+	// Create request with cancellable context
+	reqCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	req := httptest.NewRequest("POST", "/testpkg.TestService/TestMethod", 
+		strings.NewReader(`{"message":"test"}`)).WithContext(reqCtx)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	gateway.Handler().ServeHTTP(rec, req)
+	
+	// Should return timeout error
+	assert.Equal(t, http.StatusRequestTimeout, rec.Code)
+}
+
+// Test: Panic recovery in handler
+func TestConnectGateway_PanicRecovery(t *testing.T) {
+	gateway := NewConnectGateway()
+	ctx := context.Background()
+
+	// Setup service with panicking actor
+	fds := createTestServiceDescriptor()
+	actorSystem, err := actors.NewActorSystem("test-panic",
+		actors.WithExpireActorAfter(1*time.Minute))
+	require.NoError(t, err)
+	err = actorSystem.Start(ctx)
+	require.NoError(t, err)
+	defer actorSystem.Stop(ctx)
+
+	actor := &panicActor{}
+	pid, err := actorSystem.Spawn(ctx, "test-panic-actor", actor)
+	require.NoError(t, err)
+
+	err = gateway.UpdateService(ctx, "TestService", fds, pid)
+	require.NoError(t, err)
+
+	// Send request that will cause panic
+	req := httptest.NewRequest("POST", "/testpkg.TestService/TestMethod", 
+		strings.NewReader(`{"message":"panic"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	// Should not panic
+	assert.NotPanics(t, func() {
+		gateway.Handler().ServeHTTP(rec, req)
+	})
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// Test: Malformed content-type headers
+func TestConnectGateway_MalformedContentType(t *testing.T) {
+	gateway := NewConnectGateway()
+	ctx := context.Background()
+
+	// Setup service
+	fds := createTestServiceDescriptor()
+	actorSystem, err := actors.NewActorSystem("test-content-type",
+		actors.WithExpireActorAfter(1*time.Minute))
+	require.NoError(t, err)
+	err = actorSystem.Start(ctx)
+	require.NoError(t, err)
+	defer actorSystem.Stop(ctx)
+
+	actor := &httpTestActor{}
+	pid, err := actorSystem.Spawn(ctx, "test-content-type-actor", actor)
+	require.NoError(t, err)
+
+	err = gateway.UpdateService(ctx, "TestService", fds, pid)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		contentType string
+		wantStatus  int
+	}{
+		{
+			name:        "missing content type",
+			contentType: "",
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "wrong content type",
+			contentType: "text/plain",
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "malformed content type",
+			contentType: "application/json; invalid-param",
+			wantStatus:  http.StatusOK, // Should still accept valid base type
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/testpkg.TestService/TestMethod",
+				strings.NewReader(`{"message":"test"}`))
+			if tt.contentType != "" {
+				req.Header.Set("Content-Type", tt.contentType)
+			}
+			rec := httptest.NewRecorder()
+			
+			gateway.Handler().ServeHTTP(rec, req)
+			
+			assert.Equal(t, tt.wantStatus, rec.Code)
+		})
+	}
+}
+
+// Helper actors and functions
+
+type slowActor struct {
+	delay time.Duration
+}
+
+func (a *slowActor) PreStart(ctx context.Context) error { return nil }
+func (a *slowActor) PostStop(ctx context.Context) error { return nil }
+func (a *slowActor) Receive(ctx *actors.ReceiveContext) {
+	switch ctx.Message().(type) {
+	case *pb.ServiceRequest:
+		// Simulate slow processing
+		time.Sleep(a.delay)
+		ctx.Response(&pb.ServiceResponse{
+			Success: true,
+			Output:  []byte(`{"result":"slow response"}`),
+		})
+	}
+}
+
+type panicActor struct{}
+
+func (a *panicActor) PreStart(ctx context.Context) error { return nil }
+func (a *panicActor) PostStop(ctx context.Context) error { return nil }
+func (a *panicActor) Receive(ctx *actors.ReceiveContext) {
+	switch ctx.Message().(type) {
+	case *pb.ServiceRequest:
+		panic("test panic in actor")
+	}
+}
+
+func createTestServiceDescriptor() *descriptorpb.FileDescriptorSet {
+	return &descriptorpb.FileDescriptorSet{
+		File: []*descriptorpb.FileDescriptorProto{
+			{
+				Name:    strPtr("test.proto"),
+				Package: strPtr("testpkg"),
+				MessageType: []*descriptorpb.DescriptorProto{
+					{
+						Name: strPtr("TestRequest"),
+						Field: []*descriptorpb.FieldDescriptorProto{
+							{
+								Name:   strPtr("message"),
+								Number: int32Ptr(1),
+								Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+							},
+						},
+					},
+					{
+						Name: strPtr("TestResponse"),
+						Field: []*descriptorpb.FieldDescriptorProto{
+							{
+								Name:   strPtr("result"),
+								Number: int32Ptr(1),
+								Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+							},
+						},
+					},
+				},
+				Service: []*descriptorpb.ServiceDescriptorProto{
+					{
+						Name: strPtr("TestService"),
+						Method: []*descriptorpb.MethodDescriptorProto{
+							{
+								Name:       strPtr("TestMethod"),
+								InputType:  strPtr(".testpkg.TestRequest"),
+								OutputType: strPtr(".testpkg.TestResponse"),
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }

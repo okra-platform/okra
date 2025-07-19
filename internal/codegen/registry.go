@@ -28,7 +28,7 @@ func (r *Registry) Get(language, packageName string) (Generator, error) {
 	if !exists {
 		return nil, fmt.Errorf("unsupported language: %s", language)
 	}
-	
+
 	return factory(packageName), nil
 }
 
@@ -40,4 +40,3 @@ func (r *Registry) Languages() []string {
 	}
 	return languages
 }
-

@@ -17,19 +17,19 @@ type Method = schema.Method
 type ServicePackage struct {
 	// Module is the compiled WASM module
 	Module wasm.WASMCompiledModule
-	
+
 	// Schema describes the service interface
 	Schema *schema.Schema
-	
+
 	// Config contains service configuration
 	Config *config.Config
-	
+
 	// ServiceName is the primary service name from the schema
 	ServiceName string
-	
+
 	// Methods maps method names to their definitions for quick lookup
 	Methods map[string]*Method
-	
+
 	// FileDescriptors contains protobuf descriptors for external service exposure
 	FileDescriptors *descriptorpb.FileDescriptorSet
 }
@@ -48,7 +48,7 @@ func NewServicePackage(module wasm.WASMCompiledModule, schema *schema.Schema, co
 	if len(schema.Services) == 0 {
 		return nil, ErrNoServices
 	}
-	
+
 	// Build method lookup map from the first service
 	// (OKRA typically has one service per schema)
 	service := schema.Services[0]
@@ -56,7 +56,7 @@ func NewServicePackage(module wasm.WASMCompiledModule, schema *schema.Schema, co
 	for i := range service.Methods {
 		methods[service.Methods[i].Name] = &service.Methods[i]
 	}
-	
+
 	return &ServicePackage{
 		Module:      module,
 		Schema:      schema,
@@ -84,11 +84,11 @@ func LoadFileDescriptors(path string) (*descriptorpb.FileDescriptorSet, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	fds := &descriptorpb.FileDescriptorSet{}
 	if err := proto.Unmarshal(data, fds); err != nil {
 		return nil, err
 	}
-	
+
 	return fds, nil
 }

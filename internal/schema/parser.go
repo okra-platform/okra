@@ -79,7 +79,7 @@ func parseObjectType(doc *ast.Document, ref int, schema *Schema) error {
 
 func parseEnumType(doc *ast.Document, ref int, schema *Schema) error {
 	enumDef := doc.EnumTypeDefinitions[ref]
-	
+
 	enumType := EnumType{
 		Name:   doc.Input.ByteSliceString(enumDef.Name),
 		Doc:    getDescription(doc, enumDef.Description),
@@ -103,12 +103,12 @@ func parseOkraMetadata(doc *ast.Document, typeDef ast.ObjectTypeDefinition, sche
 	// Find the field with @okra directive
 	for _, fieldRef := range typeDef.FieldsDefinition.Refs {
 		fieldDef := doc.FieldDefinitions[fieldRef]
-		
+
 		// Look for @okra directive on the field
 		for _, directiveRef := range fieldDef.Directives.Refs {
 			directive := doc.Directives[directiveRef]
 			directiveName := doc.Input.ByteSliceString(directive.Name)
-			
+
 			if directiveName == "okra" {
 				// Parse directive arguments
 				args := parseDirectiveArgs(doc, directive)
@@ -119,7 +119,7 @@ func parseOkraMetadata(doc *ast.Document, typeDef ast.ObjectTypeDefinition, sche
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -142,7 +142,7 @@ func parseService(doc *ast.Document, typeDef ast.ObjectTypeDefinition, serviceNa
 
 func parseField(doc *ast.Document, fieldRef int) Field {
 	fieldDef := doc.FieldDefinitions[fieldRef]
-	
+
 	field := Field{
 		Name:       doc.Input.ByteSliceString(fieldDef.Name),
 		Doc:        getDescription(doc, fieldDef.Description),
@@ -159,7 +159,7 @@ func parseField(doc *ast.Document, fieldRef int) Field {
 
 func parseMethod(doc *ast.Document, fieldRef int) Method {
 	fieldDef := doc.FieldDefinitions[fieldRef]
-	
+
 	method := Method{
 		Name:       doc.Input.ByteSliceString(fieldDef.Name),
 		Doc:        getDescription(doc, fieldDef.Description),
@@ -210,32 +210,32 @@ func parseType(doc *ast.Document, typeRef int) (string, bool) {
 
 func parseDirectives(doc *ast.Document, directives ast.DirectiveList) []Directive {
 	result := []Directive{}
-	
+
 	for _, directiveRef := range directives.Refs {
 		directive := doc.Directives[directiveRef]
-		
+
 		result = append(result, Directive{
 			Name: doc.Input.ByteSliceString(directive.Name),
 			Args: parseDirectiveArgs(doc, directive),
 		})
 	}
-	
+
 	return result
 }
 
 func parseDirectiveArgs(doc *ast.Document, directive ast.Directive) map[string]string {
 	args := make(map[string]string)
-	
+
 	for _, argRef := range directive.Arguments.Refs {
 		arg := doc.Arguments[argRef]
 		argName := doc.Input.ByteSliceString(arg.Name)
-		
+
 		// Get the value using ArgumentValue method
 		value := doc.ArgumentValue(argRef)
 		argValue := parseValue(doc, value)
 		args[argName] = argValue
 	}
-	
+
 	return args
 }
 
@@ -244,13 +244,13 @@ func parseValue(doc *ast.Document, value ast.Value) string {
 	case ast.ValueKindString:
 		// For string values, use the document's string value methods
 		return doc.StringValueContentString(value.Ref)
-		
+
 	case ast.ValueKindEnum:
 		// For enum values, the Ref points to the EnumValue
 		if value.Ref >= 0 && value.Ref < len(doc.EnumValues) {
 			return doc.Input.ByteSliceString(doc.EnumValues[value.Ref].Name)
 		}
-		
+
 	case ast.ValueKindBoolean:
 		// Boolean values are stored in the BooleanValues array
 		// The Ref is either 0 (false) or 1 (true)
@@ -260,16 +260,16 @@ func parseValue(doc *ast.Document, value ast.Value) string {
 			}
 			return "false"
 		}
-		
+
 	case ast.ValueKindInteger:
 		// For integer values, use the document's int value methods
 		return fmt.Sprintf("%d", doc.IntValueAsInt(value.Ref))
-		
+
 	case ast.ValueKindFloat:
 		// For float values, use the document's float value methods
 		return fmt.Sprintf("%f", doc.FloatValueAsFloat32(value.Ref))
 	}
-	
+
 	return ""
 }
 
@@ -277,6 +277,6 @@ func getDescription(doc *ast.Document, desc ast.Description) string {
 	if !desc.IsDefined {
 		return ""
 	}
-	
+
 	return doc.Input.ByteSliceString(desc.Content)
 }

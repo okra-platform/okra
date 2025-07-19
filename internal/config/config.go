@@ -9,13 +9,13 @@ import (
 
 // Config represents the okra.json configuration file
 type Config struct {
-	Name     string       `json:"name"`
-	Version  string       `json:"version"`
-	Language string       `json:"language"`
-	Schema   string       `json:"schema"`
-	Source   string       `json:"source"`
-	Build    BuildConfig  `json:"build"`
-	Dev      DevConfig    `json:"dev"`
+	Name     string      `json:"name"`
+	Version  string      `json:"version"`
+	Language string      `json:"language"`
+	Schema   string      `json:"schema"`
+	Source   string      `json:"source"`
+	Build    BuildConfig `json:"build"`
+	Dev      DevConfig   `json:"dev"`
 }
 
 // BuildConfig contains build-specific configuration

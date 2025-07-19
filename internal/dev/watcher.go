@@ -100,7 +100,7 @@ func (fw *FileWatcher) Start(ctx context.Context) error {
 // shouldWatch checks if a file should trigger a change event based on patterns
 func (fw *FileWatcher) shouldWatch(path string) bool {
 	base := filepath.Base(path)
-	
+
 	// Check excludes first
 	for _, pattern := range fw.exclude {
 		if matched, _ := filepath.Match(pattern, base); matched {

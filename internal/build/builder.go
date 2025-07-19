@@ -16,16 +16,16 @@ import (
 type BuildArtifacts struct {
 	// WASMPath is the path to the compiled WASM module
 	WASMPath string
-	
+
 	// ProtobufDescriptorPath is the path to the generated protobuf descriptor
 	ProtobufDescriptorPath string
-	
+
 	// InterfacePath is the path to the generated interface code
 	InterfacePath string
-	
+
 	// Schema contains the parsed schema
 	Schema *schema.Schema
-	
+
 	// BuildInfo contains build metadata
 	BuildInfo BuildInfo
 }
@@ -34,13 +34,13 @@ type BuildArtifacts struct {
 type BuildInfo struct {
 	// Timestamp when the build was created
 	Timestamp time.Time
-	
+
 	// Version from config
 	Version string
-	
+
 	// Language used for the build
 	Language string
-	
+
 	// SchemaChecksum for validation
 	SchemaChecksum string
 }
@@ -49,13 +49,13 @@ type BuildInfo struct {
 type Builder interface {
 	// GenerateCode generates interface code from the schema
 	GenerateCode(schemaPath string) error
-	
+
 	// BuildWASM compiles the source code to WASM
 	BuildWASM() error
-	
+
 	// GetArtifacts returns the build artifacts after a successful build
 	GetArtifacts() (*BuildArtifacts, error)
-	
+
 	// Clean removes any temporary build artifacts
 	Clean() error
 }
@@ -65,7 +65,7 @@ type ServiceBuilder struct {
 	config      *config.Config
 	projectRoot string
 	logger      zerolog.Logger
-	
+
 	// Build state
 	schema     *schema.Schema
 	okraDir    string
@@ -85,22 +85,22 @@ func NewServiceBuilder(cfg *config.Config, projectRoot string, logger zerolog.Lo
 // GenerateCode generates interface code from the schema
 func (b *ServiceBuilder) GenerateCode(schemaPath string) error {
 	b.buildStart = time.Now()
-	
+
 	// Check schema file exists
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 		return fmt.Errorf("schema file not found: %s", schemaPath)
 	}
-	
+
 	// Read schema file
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
 		return fmt.Errorf("failed to read schema file %s: %w", schemaPath, err)
 	}
-	
+
 	if len(content) == 0 {
 		return fmt.Errorf("schema file is empty: %s", schemaPath)
 	}
-	
+
 	b.logger.Debug().
 		Str("path", schemaPath).
 		Int("size", len(content)).
@@ -111,14 +111,14 @@ func (b *ServiceBuilder) GenerateCode(schemaPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to parse schema: %w", err)
 	}
-	
+
 	b.schema = parsedSchema
-	
+
 	// Validate schema has services
 	if len(parsedSchema.Services) == 0 {
 		return fmt.Errorf("no services defined in schema")
 	}
-	
+
 	b.logger.Debug().
 		Int("service_count", len(parsedSchema.Services)).
 		Msg("parsed schema services")
@@ -137,7 +137,7 @@ func (b *ServiceBuilder) GenerateCode(schemaPath string) error {
 	if err := b.generateProtobufDescriptor(parsedSchema); err != nil {
 		return fmt.Errorf("failed to generate protobuf: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -146,9 +146,9 @@ func (b *ServiceBuilder) BuildWASM() error {
 	if b.schema == nil {
 		return fmt.Errorf("GenerateCode must be called before BuildWASM")
 	}
-	
+
 	b.logger.Debug().Str("language", b.config.Language).Msg("starting WASM build")
-	
+
 	// Ensure build directory exists
 	buildDir := filepath.Dir(filepath.Join(b.projectRoot, b.config.Build.Output))
 	if err := os.MkdirAll(buildDir, 0755); err != nil {
@@ -171,13 +171,13 @@ func (b *ServiceBuilder) GetArtifacts() (*BuildArtifacts, error) {
 	if b.schema == nil {
 		return nil, fmt.Errorf("no build has been performed")
 	}
-	
+
 	// Verify WASM output exists
 	wasmPath := filepath.Join(b.projectRoot, b.config.Build.Output)
 	if _, err := os.Stat(wasmPath); err != nil {
 		return nil, fmt.Errorf("WASM output not found: %w", err)
 	}
-	
+
 	// Get interface path based on language
 	var interfacePath string
 	switch b.config.Language {
@@ -186,7 +186,7 @@ func (b *ServiceBuilder) GetArtifacts() (*BuildArtifacts, error) {
 	case "typescript":
 		interfacePath = filepath.Join(b.projectRoot, "types", "interface.ts")
 	}
-	
+
 	artifacts := &BuildArtifacts{
 		WASMPath:               wasmPath,
 		ProtobufDescriptorPath: filepath.Join(b.okraDir, "service.pb.desc"),
@@ -199,7 +199,7 @@ func (b *ServiceBuilder) GetArtifacts() (*BuildArtifacts, error) {
 			SchemaChecksum: "", // TODO: implement checksum
 		},
 	}
-	
+
 	return artifacts, nil
 }
 

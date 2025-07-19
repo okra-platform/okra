@@ -20,7 +20,6 @@ type WASMWorkerPool interface {
 	Shutdown(ctx context.Context) error
 }
 
-
 // WASMWorkerPoolConfig holds configuration for the worker pool.
 type WASMWorkerPoolConfig struct {
 	MinWorkers int
@@ -158,7 +157,7 @@ func (p *wasmWorkerPool) releaseWorker(worker WASMWorker) {
 
 func (p *wasmWorkerPool) cleanupWorkers(ctx context.Context) error {
 	var lastErr error
-	
+
 	// Close all idle workers
 	for {
 		select {

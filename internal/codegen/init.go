@@ -13,12 +13,12 @@ func init() {
 	DefaultRegistry.Register("go", func(packageName string) Generator {
 		return golang.NewGenerator(packageName)
 	})
-	
+
 	// Register TypeScript generator
 	DefaultRegistry.Register("typescript", func(packageName string) Generator {
 		return typescript.NewGenerator(packageName)
 	})
-	
+
 	// Register ts as an alias for typescript
 	DefaultRegistry.Register("ts", func(packageName string) Generator {
 		return typescript.NewGenerator(packageName)
