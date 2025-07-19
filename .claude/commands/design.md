@@ -51,7 +51,6 @@ First, check what the user provided after `/design`:
        - design_date: today's date
        - design_doc: path to the design document
        - status: "design-complete"
-     - Create a git branch called design-doc/<feature-name> for the design documentation
 
 Do NOT commit changes - I will handle commits after review.
 
