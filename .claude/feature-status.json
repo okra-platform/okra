@@ -16,6 +16,11 @@
       "design_date": "2025-07-20",
       "design_doc": "docs/design/2025-07-20-sql-host-api.md",
       "status": "design-complete"
+    },
+    "sql-migrations": {
+      "design_date": "2025-07-20",
+      "design_doc": "docs/design/2025-07-20-sql-migrations.md",
+      "status": "design-complete"
     }
   },
   "_instructions": "This file tracks feature implementation status. Update when: 1) Creating a design doc, 2) Starting implementation, 3) Completing implementation, 4) Merging to main"

@@ -77,6 +77,9 @@ Each deployed module contains:
 - [09_typescript_setup.md](./09_typescript_setup.md) – TypeScript service development setup and guidelines
 - [10_development-debugging.md](./10_development-debugging.md) – Development and debugging guide for OKRA services
 
+### Data & Persistence
+- [21_database-migrations.md](./21_database-migrations.md) – Database schema definition and migration system using GraphQL-like syntax
+
 ### Operations
 - [11_okra-serve.md](./11_okra-serve.md) – Production runtime server documentation (okra serve command)
 
