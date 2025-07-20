@@ -2,7 +2,19 @@
 
 ## Overview
 
-This design document details the implementation of five foundational host APIs for OKRA: log, state, env, secrets, and fetch. These APIs follow the patterns established in the Host API Interface Design and provide essential capabilities for WASM services.
+This design document details the implementation of five foundational host APIs for OKRA: log, state, env, secrets, and fetch. These APIs follow the patterns established in the [Host API Interface Design](./2025-01-15-host-api-interface.md) and provide essential capabilities for WASM services.
+
+**Note**: This document builds upon the host API infrastructure already implemented in the `internal/hostapi` package. All type definitions and interfaces referenced here are defined in that package.
+
+## Key Changes from Original Design
+
+Based on the implemented host API infrastructure, this design has been updated to:
+
+1. **Use the unified host API interface** - All APIs go through `run_host_api` and `next` functions instead of individual host functions
+2. **Follow the factory pattern** - Each API has a factory that creates service-specific instances
+3. **Reference existing types** - No duplicate type definitions; all common types are in `internal/hostapi`
+4. **Use proper error constants** - Error codes use the predefined constants like `ErrorCodeInternalError`
+5. **Follow JSON naming conventions** - All JSON fields use camelCase per project conventions
 
 ### Problem Statement
 
@@ -33,41 +45,20 @@ WASM services need secure, performant access to:
 
 ### Common Types
 
-All APIs use JSON for cross-boundary communication with these common types:
+All APIs use JSON for cross-boundary communication. The common types are already defined in the `internal/hostapi` package:
 
-```go
-// HostAPIRequest is the common request wrapper
-type HostAPIRequest struct {
-    API      string          `json:"api"`      // e.g., "okra.log"
-    Method   string          `json:"method"`   // e.g., "write"
-    Payload  json.RawMessage `json:"payload"`  // Method-specific payload
-}
+- `HostAPIRequest` - Unified request format with API name, method, and parameters
+- `HostAPIResponse` - Unified response with success flag, data, and error
+- `HostAPIError` - Structured error with code, message, and details
+- `RequestMetadata` - Trace context and service information
 
-// HostAPIResponse is the common response wrapper
-type HostAPIResponse struct {
-    Success bool            `json:"success"`
-    Data    json.RawMessage `json:"data,omitempty"`
-    Error   *HostAPIError   `json:"error,omitempty"`
-}
-
-// HostAPIError represents errors returned to guest code
-type HostAPIError struct {
-    Code    string                 `json:"code"`    
-    Message string                 `json:"message"` 
-    Details map[string]interface{} `json:"details,omitempty"`
-}
-```
+For the complete type definitions, see `internal/hostapi/api.go` and `internal/hostapi/errors.go`.
 
 ### 1. Log API (`okra.log`)
 
-#### Interface
+#### Request/Response Types
 
 ```go
-// LogAPI implements structured logging
-type LogAPI interface {
-    HostAPI
-}
-
 // Log method payloads
 type LogWriteRequest struct {
     Level     string                 `json:"level"`     // debug, info, warn, error
@@ -81,86 +72,129 @@ type LogWriteResponse struct {
 }
 ```
 
-#### Implementation
+#### Factory Implementation
 
 ```go
+// Factory implementation for log API
+type logAPIFactory struct{}
+
+func NewLogAPIFactory() hostapi.HostAPIFactory {
+    return &logAPIFactory{}
+}
+
+func (f *logAPIFactory) Name() string { return "okra.log" }
+func (f *logAPIFactory) Version() string { return "v1.0.0" }
+
+func (f *logAPIFactory) Create(ctx context.Context, config hostapi.HostAPIConfig) (hostapi.HostAPI, error) {
+    // Create service-specific logger
+    logger := config.Logger.With(
+        slog.String("api", "okra.log"),
+        slog.String("service", config.ServiceName),
+    )
+    
+    return &logAPI{
+        logger:      logger,
+        serviceName: config.ServiceName,
+        config:      defaultLogConfig(),
+    }, nil
+}
+
+func (f *logAPIFactory) Methods() []hostapi.MethodMetadata {
+    return []hostapi.MethodMetadata{
+        {
+            Name:        "write",
+            Description: "Write a structured log message",
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "level":     *spec.StringProperty().WithEnum("debug", "info", "warn", "error"),
+                    "message":   *spec.StringProperty().WithDescription("Log message"),
+                    "context":   *spec.ObjectProperty().WithDescription("Additional context"),
+                    "timestamp": *spec.StringProperty().WithFormat("date-time"),
+                }).
+                WithRequired("level", "message"),
+            Returns: spec.ObjectProperty(), // Empty object
+            Errors: []hostapi.ErrorMetadata{
+                {Code: "INVALID_LEVEL", Description: "Invalid log level"},
+                {Code: "MESSAGE_TOO_LARGE", Description: "Message exceeds size limit"},
+            },
+        },
+    }
+}
+
+// Instance implementation
 type logAPI struct {
-    base   *BaseHostAPI
-    logger *slog.Logger
-    config LogConfig
+    logger      *slog.Logger
+    serviceName string
+    config      LogConfig
 }
 
 type LogConfig struct {
-    MaxMessageSize int    // Default: 1MB
-    MaxContextKeys int    // Default: 100
-    MaxContextDepth int   // Default: 10
-    AllowedLevels  []string
+    MaxMessageSize  int      // Default: 1MB
+    MaxContextKeys  int      // Default: 100
+    MaxContextDepth int      // Default: 10
+    AllowedLevels   []string // Default: all levels
 }
 
-func NewLogAPI(config LogConfig) HostAPI {
-    return &logAPI{
-        config: config,
-    }
-}
-
-func (l *logAPI) Name() string { return "okra.log" }
+func (l *logAPI) Name() string    { return "okra.log" }
 func (l *logAPI) Version() string { return "v1.0.0" }
 
-func (l *logAPI) Functions() []HostFunction {
-    return []HostFunction{
-        l.base.WrapFunction(&logWriteFunction{api: l}),
+func (l *logAPI) Execute(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+    switch method {
+    case "write":
+        var req LogWriteRequest
+        if err := json.Unmarshal(params, &req); err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "INVALID_PARAMETERS",
+                Message: "Failed to parse log write request",
+                Details: err.Error(),
+            }
+        }
+        
+        // Validate request
+        if err := l.validateRequest(&req); err != nil {
+            return nil, err
+        }
+        
+        // Log the message
+        level := parseLevel(req.Level)
+        l.logger.LogAttrs(ctx, level, req.Message, 
+            slog.Any("context", req.Context),
+        )
+        
+        // Return empty success response
+        return json.Marshal(LogWriteResponse{})
+        
+    default:
+        return nil, &hostapi.HostAPIError{
+            Code:    "METHOD_NOT_FOUND",
+            Message: fmt.Sprintf("Unknown method: %s", method),
+        }
     }
 }
 
-type logWriteFunction struct {
-    api *logAPI
-}
-
-func (f *logWriteFunction) Name() string { return "write" }
-
-func (f *logWriteFunction) Execute(ctx context.Context, params []uint64) ([]uint64, error) {
-    // Extract request from WASM memory
-    reqPtr, reqLen := uint32(params[0]), uint32(params[1])
-    reqData, err := f.api.base.memory.ReadBytes(reqPtr, reqLen)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read request: %w", err)
-    }
-    
-    var req LogWriteRequest
-    if err := json.Unmarshal(reqData, &req); err != nil {
-        return nil, fmt.Errorf("failed to unmarshal request: %w", err)
-    }
-    
-    // Code-level policy checks
-    if err := f.validateRequest(&req); err != nil {
-        return f.returnError(err)
-    }
-    
-    // Log the message
-    level := parseLevel(req.Level)
-    f.api.logger.LogAttrs(ctx, level, req.Message, 
-        slog.Any("context", req.Context),
-        slog.String("service", f.api.base.serviceName),
-    )
-    
-    // Return success
-    return f.returnSuccess(LogWriteResponse{})
-}
-
-func (f *logWriteFunction) validateRequest(req *LogWriteRequest) error {
+func (l *logAPI) validateRequest(req *LogWriteRequest) error {
     // Message size check
-    if len(req.Message) > f.api.config.MaxMessageSize {
-        return fmt.Errorf("message exceeds size limit")
+    if len(req.Message) > l.config.MaxMessageSize {
+        return &hostapi.HostAPIError{
+            Code:    "MESSAGE_TOO_LARGE",
+            Message: fmt.Sprintf("Message size %d exceeds limit %d", len(req.Message), l.config.MaxMessageSize),
+        }
     }
     
     // Level validation
-    if !isValidLevel(req.Level, f.api.config.AllowedLevels) {
-        return fmt.Errorf("invalid log level: %s", req.Level)
+    if !isValidLevel(req.Level, l.config.AllowedLevels) {
+        return &hostapi.HostAPIError{
+            Code:    "INVALID_LEVEL",
+            Message: fmt.Sprintf("Invalid log level: %s", req.Level),
+        }
     }
     
     // Context validation
-    if err := validateContext(req.Context, f.api.config); err != nil {
-        return fmt.Errorf("invalid context: %w", err)
+    if len(req.Context) > l.config.MaxContextKeys {
+        return &hostapi.HostAPIError{
+            Code:    "CONTEXT_TOO_LARGE",
+            Message: fmt.Sprintf("Context has %d keys, exceeds limit %d", len(req.Context), l.config.MaxContextKeys),
+        }
     }
     
     return nil
@@ -169,7 +203,7 @@ func (f *logWriteFunction) validateRequest(req *LogWriteRequest) error {
 
 ### 2. State API (`okra.state`)
 
-#### Interface
+#### Request/Response Types
 
 ```go
 // State method payloads
@@ -207,8 +241,8 @@ type StateListRequest struct {
 
 type StateListResponse struct {
     Keys       []string `json:"keys"`
-    NextCursor string   `json:"next_cursor,omitempty"`
-    HasMore    bool     `json:"has_more"`
+    NextCursor string   `json:"nextCursor,omitempty"` // camelCase per convention
+    HasMore    bool     `json:"hasMore"`              // camelCase per convention
 }
 
 type StateIncrementRequest struct {
@@ -223,13 +257,99 @@ type StateIncrementResponse struct {
 }
 ```
 
-#### Implementation
+#### Factory Implementation
 
 ```go
+// Factory implementation for state API
+type stateAPIFactory struct{}
+
+func NewStateAPIFactory() hostapi.HostAPIFactory {
+    return &stateAPIFactory{}
+}
+
+func (f *stateAPIFactory) Name() string { return "okra.state" }
+func (f *stateAPIFactory) Version() string { return "v1.0.0" }
+
+func (f *stateAPIFactory) Create(ctx context.Context, config hostapi.HostAPIConfig) (hostapi.HostAPI, error) {
+    // Create service-specific state store
+    store, err := createStateStore(config)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create state store: %w", err)
+    }
+    
+    return &stateAPI{
+        store:       store,
+        logger:      config.Logger.With("api", "okra.state", "service", config.ServiceName),
+        serviceName: config.ServiceName,
+        config:      defaultStateConfig(),
+    }, nil
+}
+
+func (f *stateAPIFactory) Methods() []hostapi.MethodMetadata {
+    return []hostapi.MethodMetadata{
+        {
+            Name:        "get",
+            Description: "Retrieve a value from state storage",
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "key": *spec.StringProperty().WithDescription("The key to retrieve"),
+                }).
+                WithRequired("key"),
+            Returns: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "value":   *spec.StringProperty().WithFormat("byte"),
+                    "version": *spec.IntegerProperty(),
+                    "exists":  *spec.BoolProperty(),
+                }),
+            Errors: []hostapi.ErrorMetadata{
+                {Code: "KEY_TOO_LONG", Description: "Key exceeds maximum length"},
+            },
+        },
+        {
+            Name:        "set",
+            Description: "Store a value in state storage",
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "key":     *spec.StringProperty(),
+                    "value":   *spec.StringProperty().WithFormat("byte"),
+                    "version": *spec.IntegerProperty().WithDescription("For optimistic concurrency"),
+                    "ttl":     *spec.IntegerProperty().WithDescription("TTL in seconds"),
+                }).
+                WithRequired("key", "value"),
+            Returns: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "version": *spec.IntegerProperty(),
+                }),
+            Errors: []hostapi.ErrorMetadata{
+                {Code: "VERSION_CONFLICT", Description: "Version mismatch for optimistic concurrency"},
+                {Code: "VALUE_TOO_LARGE", Description: "Value exceeds maximum size"},
+            },
+        },
+        {
+            Name:        "listKeys",
+            Description: "List all keys matching a prefix",
+            Streaming:   true, // This method returns an iterator
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "prefix": *spec.StringProperty(),
+                    "limit":  *spec.IntegerProperty().WithMaximum(1000, false),
+                }).
+                WithRequired("prefix"),
+            Returns: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "iteratorId": *spec.StringProperty(),
+                    "hasData":    *spec.BoolProperty(),
+                }),
+        },
+    }
+}
+
+// Instance implementation
 type stateAPI struct {
-    base    *BaseHostAPI
-    backend StateBackend
-    config  StateConfig
+    store       StateStore
+    logger      *slog.Logger
+    serviceName string
+    config      StateConfig
 }
 
 type StateConfig struct {
@@ -240,8 +360,8 @@ type StateConfig struct {
     KeyPrefix      string // Service-specific prefix
 }
 
-// StateBackend abstracts storage implementation
-type StateBackend interface {
+// StateStore abstracts storage implementation
+type StateStore interface {
     Get(ctx context.Context, key string) (*StateEntry, error)
     Set(ctx context.Context, key string, entry *StateEntry) error
     Delete(ctx context.Context, key string, version *int64) error
@@ -255,27 +375,45 @@ type StateEntry struct {
     TTL     *time.Time
 }
 
-// In-memory implementation for development
-type memoryStateBackend struct {
-    mu      sync.RWMutex
-    data    map[string]*StateEntry
-    version int64
+func (s *stateAPI) Name() string    { return "okra.state" }
+func (s *stateAPI) Version() string { return "v1.0.0" }
+
+func (s *stateAPI) Execute(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+    // For streaming methods, we need to implement StreamingHostAPI
+    // This is shown for completeness - actual implementation would use ExecuteStreaming
+    switch method {
+    case "get":
+        return s.executeGet(ctx, params)
+    case "set":
+        return s.executeSet(ctx, params)
+    case "delete":
+        return s.executeDelete(ctx, params)
+    case "increment":
+        return s.executeIncrement(ctx, params)
+    default:
+        return nil, &hostapi.HostAPIError{
+            Code:    hostapi.ErrorCodeInternalError,
+            Message: fmt.Sprintf("Unknown method: %s", method),
+        }
+    }
 }
 
-func (s *stateAPI) Functions() []HostFunction {
-    return []HostFunction{
-        s.base.WrapFunction(&stateGetFunction{api: s}),
-        s.base.WrapFunction(&stateSetFunction{api: s}),
-        s.base.WrapFunction(&stateDeleteFunction{api: s}),
-        s.base.WrapFunction(&stateListFunction{api: s}),
-        s.base.WrapFunction(&stateIncrementFunction{api: s}),
+// ExecuteStreaming implements StreamingHostAPI for listKeys
+func (s *stateAPI) ExecuteStreaming(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, hostapi.Iterator, error) {
+    switch method {
+    case "listKeys":
+        return s.executeListKeys(ctx, params)
+    default:
+        // Non-streaming methods fall back to Execute
+        result, err := s.Execute(ctx, method, params)
+        return result, nil, err
     }
 }
 ```
 
 ### 3. Environment API (`okra.env`)
 
-#### Interface
+#### Request/Response Types
 
 ```go
 // Env method payloads
@@ -289,75 +427,114 @@ type EnvGetResponse struct {
 }
 ```
 
-#### Implementation
+#### Factory Implementation
 
 ```go
-type envAPI struct {
-    base   *BaseHostAPI
-    config EnvConfig
-    values map[string]string // Cached at initialization
+// Factory implementation for env API
+type envAPIFactory struct{}
+
+func NewEnvAPIFactory() hostapi.HostAPIFactory {
+    return &envAPIFactory{}
 }
 
-type EnvConfig struct {
-    MaxKeyLength   int
-    AllowedKeys    []string // If set, only these keys allowed
-    BlockedKeys    []string // Never allow these keys
-    ServiceScoped  bool     // Prefix keys with service name
-}
+func (f *envAPIFactory) Name() string { return "okra.env" }
+func (f *envAPIFactory) Version() string { return "v1.0.0" }
 
-func NewEnvAPI(config EnvConfig) HostAPI {
+func (f *envAPIFactory) Create(ctx context.Context, config hostapi.HostAPIConfig) (hostapi.HostAPI, error) {
     api := &envAPI{
-        config: config,
-        values: make(map[string]string),
+        serviceName: config.ServiceName,
+        logger:      config.Logger.With("api", "okra.env"),
+        config:      defaultEnvConfig(),
+        values:      make(map[string]string),
     }
     
     // Cache allowed environment variables at startup
     api.loadEnvironment()
     
-    return api
+    return api, nil
 }
 
-func (e *envAPI) loadEnvironment() {
-    // Load from actual environment or config
-    for _, key := range os.Environ() {
-        parts := strings.SplitN(key, "=", 2)
-        if len(parts) == 2 && e.isAllowedKey(parts[0]) {
-            e.values[parts[0]] = parts[1]
+func (f *envAPIFactory) Methods() []hostapi.MethodMetadata {
+    return []hostapi.MethodMetadata{
+        {
+            Name:        "get",
+            Description: "Get environment variable value",
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "key": *spec.StringProperty().WithDescription("Environment variable name"),
+                }).
+                WithRequired("key"),
+            Returns: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "value":  *spec.StringProperty(),
+                    "exists": *spec.BoolProperty(),
+                }),
+            Errors: []hostapi.ErrorMetadata{
+                {Code: "KEY_NOT_ALLOWED", Description: "Key is not in allowed list"},
+                {Code: "KEY_BLOCKED", Description: "Key is explicitly blocked"},
+            },
+        },
+    }
+}
+
+// Instance implementation  
+type envAPI struct {
+    serviceName string
+    logger      *slog.Logger
+    config      EnvConfig
+    values      map[string]string // Cached at initialization
+}
+
+type EnvConfig struct {
+    MaxKeyLength  int
+    AllowedKeys   []string // If set, only these keys allowed
+    BlockedKeys   []string // Never allow these keys
+    ServiceScoped bool     // Prefix keys with service name
+}
+
+func (e *envAPI) Execute(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+    switch method {
+    case "get":
+        var req EnvGetRequest
+        if err := json.Unmarshal(params, &req); err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "INVALID_PARAMETERS",
+                Message: "Failed to parse env get request",
+                Details: err.Error(),
+            }
+        }
+        
+        // Validate key
+        if err := e.validateKey(req.Key); err != nil {
+            return nil, err
+        }
+        
+        // Apply service scoping if configured
+        key := req.Key
+        if e.config.ServiceScoped {
+            key = fmt.Sprintf("%s_%s", e.serviceName, key)
+        }
+        
+        // Get value
+        value, exists := e.values[key]
+        
+        return json.Marshal(EnvGetResponse{
+            Value:  value,
+            Exists: exists,
+        })
+        
+    default:
+        return nil, &hostapi.HostAPIError{
+            Code:    "METHOD_NOT_FOUND",
+            Message: fmt.Sprintf("Unknown method: %s", method),
         }
     }
-}
-
-type envGetFunction struct {
-    api *envAPI
-}
-
-func (f *envGetFunction) Execute(ctx context.Context, params []uint64) ([]uint64, error) {
-    // ... extract and unmarshal request ...
-    
-    // Code-level validation
-    if err := f.validateKey(req.Key); err != nil {
-        return f.returnError(err)
-    }
-    
-    // Apply service scoping if configured
-    key := req.Key
-    if f.api.config.ServiceScoped {
-        key = fmt.Sprintf("%s_%s", f.api.base.serviceName, key)
-    }
-    
-    // Get value
-    value, exists := f.api.values[key]
-    
-    return f.returnSuccess(EnvGetResponse{
-        Value:  value,
-        Exists: exists,
-    })
 }
 ```
 
 ### 4. Secrets API (`okra.secrets`)
 
-#### Interface
+#### Request/Response Types
 
 ```go
 // Secrets method payloads
@@ -371,13 +548,62 @@ type SecretsGetResponse struct {
 }
 ```
 
-#### Implementation
+#### Factory Implementation
 
 ```go
+// Factory implementation for secrets API
+type secretsAPIFactory struct{}
+
+func NewSecretsAPIFactory() hostapi.HostAPIFactory {
+    return &secretsAPIFactory{}
+}
+
+func (f *secretsAPIFactory) Name() string { return "okra.secrets" }
+func (f *secretsAPIFactory) Version() string { return "v1.0.0" }
+
+func (f *secretsAPIFactory) Create(ctx context.Context, config hostapi.HostAPIConfig) (hostapi.HostAPI, error) {
+    // Create secrets backend based on environment
+    backend, err := createSecretsBackend(config)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create secrets backend: %w", err)
+    }
+    
+    return &secretsAPI{
+        backend:     backend,
+        serviceName: config.ServiceName,
+        logger:      config.Logger.With("api", "okra.secrets"),
+        config:      defaultSecretsConfig(),
+    }, nil
+}
+
+func (f *secretsAPIFactory) Methods() []hostapi.MethodMetadata {
+    return []hostapi.MethodMetadata{
+        {
+            Name:        "get",
+            Description: "Retrieve a secret value",
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "key": *spec.StringProperty().WithDescription("Secret key"),
+                }).
+                WithRequired("key"),
+            Returns: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "value":  *spec.StringProperty().WithFormat("byte"),
+                    "exists": *spec.BoolProperty(),
+                }),
+            Errors: []hostapi.ErrorMetadata{
+                {Code: "INVALID_KEY", Description: "Secret key is invalid"},
+            },
+        },
+    }
+}
+
+// Instance implementation
 type secretsAPI struct {
-    base     *BaseHostAPI
-    backend  SecretsBackend
-    config   SecretsConfig
+    backend     SecretsBackend
+    serviceName string
+    logger      *slog.Logger
+    config      SecretsConfig
 }
 
 type SecretsConfig struct {
@@ -392,67 +618,70 @@ type SecretsBackend interface {
     Get(ctx context.Context, key string) ([]byte, error)
 }
 
-// Development backend using environment variables
-type envSecretsBackend struct {
-    prefix string
-}
-
-func (s *secretsAPI) Functions() []HostFunction {
-    return []HostFunction{
-        s.base.WrapFunction(&secretsGetFunction{api: s}),
-    }
-}
-
-type secretsGetFunction struct {
-    api *secretsAPI
-}
-
-func (f *secretsGetFunction) Execute(ctx context.Context, params []uint64) ([]uint64, error) {
-    // ... extract request ...
-    
-    // Enhanced validation for secrets
-    if err := f.validateSecretKey(req.Key); err != nil {
-        // Log attempt but don't reveal details
-        f.api.base.logger.Warn("invalid secret access attempt",
-            slog.String("service", f.api.base.serviceName),
-        )
-        return f.returnError(fmt.Errorf("invalid key"))
-    }
-    
-    // Apply scoping
-    key := req.Key
-    if f.api.config.ServiceScoped {
-        key = fmt.Sprintf("%s/%s", f.api.base.serviceName, key)
-    }
-    
-    // Get secret with timing attack prevention
-    value, err := f.api.backend.Get(ctx, key)
-    if err != nil {
-        // Don't distinguish between not found and other errors
-        return f.returnSuccess(SecretsGetResponse{
-            Value:  "",
-            Exists: false,
+func (s *secretsAPI) Execute(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+    switch method {
+    case "get":
+        var req SecretsGetRequest
+        if err := json.Unmarshal(params, &req); err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "INVALID_PARAMETERS",
+                Message: "Failed to parse secrets get request",
+            }
+        }
+        
+        // Enhanced validation for secrets
+        if err := s.validateSecretKey(req.Key); err != nil {
+            // Log attempt but don't reveal details
+            s.logger.Warn("invalid secret access attempt",
+                slog.String("service", s.serviceName),
+            )
+            return nil, &hostapi.HostAPIError{
+                Code:    "INVALID_KEY",
+                Message: "Invalid secret key",
+            }
+        }
+        
+        // Apply scoping
+        key := req.Key
+        if s.config.ServiceScoped {
+            key = fmt.Sprintf("%s/%s", s.serviceName, key)
+        }
+        
+        // Get secret with timing attack prevention
+        value, err := s.backend.Get(ctx, key)
+        if err != nil {
+            // Don't distinguish between not found and other errors
+            return json.Marshal(SecretsGetResponse{
+                Value:  "",
+                Exists: false,
+            })
+        }
+        
+        // Audit if configured
+        if s.config.AuditAllAccess {
+            s.logger.Info("secret accessed",
+                slog.String("service", s.serviceName),
+                slog.String("key", key),
+            )
+        }
+        
+        return json.Marshal(SecretsGetResponse{
+            Value:  base64.StdEncoding.EncodeToString(value),
+            Exists: true,
         })
+        
+    default:
+        return nil, &hostapi.HostAPIError{
+            Code:    "METHOD_NOT_FOUND",
+            Message: fmt.Sprintf("Unknown method: %s", method),
+        }
     }
-    
-    // Audit if configured
-    if f.api.config.AuditAllAccess {
-        f.api.base.logger.Info("secret accessed",
-            slog.String("service", f.api.base.serviceName),
-            slog.String("key", key),
-        )
-    }
-    
-    return f.returnSuccess(SecretsGetResponse{
-        Value:  base64.StdEncoding.EncodeToString(value),
-        Exists: true,
-    })
 }
 ```
 
 ### 5. HTTP Fetch API (`okra.fetch`)
 
-#### Interface
+#### Request/Response Types
 
 ```go
 // Fetch method payloads
@@ -472,13 +701,74 @@ type FetchResponse struct {
 }
 ```
 
-#### Implementation
+#### Factory Implementation
 
 ```go
+// Factory implementation for fetch API
+type fetchAPIFactory struct{}
+
+func NewFetchAPIFactory() hostapi.HostAPIFactory {
+    return &fetchAPIFactory{}
+}
+
+func (f *fetchAPIFactory) Name() string { return "okra.fetch" }
+func (f *fetchAPIFactory) Version() string { return "v1.0.0" }
+
+func (f *fetchAPIFactory) Create(ctx context.Context, config hostapi.HostAPIConfig) (hostapi.HostAPI, error) {
+    fetchConfig := defaultFetchConfig()
+    
+    return &fetchAPI{
+        serviceName: config.ServiceName,
+        logger:      config.Logger.With("api", "okra.fetch"),
+        config:      fetchConfig,
+        httpClient: &http.Client{
+            CheckRedirect: func(req *http.Request, via []*http.Request) error {
+                if len(via) >= fetchConfig.MaxRedirects {
+                    return fmt.Errorf("too many redirects")
+                }
+                return nil
+            },
+        },
+    }, nil
+}
+
+func (f *fetchAPIFactory) Methods() []hostapi.MethodMetadata {
+    return []hostapi.MethodMetadata{
+        {
+            Name:        "request",
+            Description: "Make an HTTP request",
+            Parameters: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "url":     *spec.StringProperty().WithFormat("uri"),
+                    "method":  *spec.StringProperty().WithEnum("GET", "POST", "PUT", "DELETE", "PATCH"),
+                    "headers": *spec.ObjectProperty().WithAdditionalProperties(&spec.Schema{Type: []string{"string"}}),
+                    "body":    *spec.StringProperty().WithFormat("byte"),
+                    "timeout": *spec.IntegerProperty().WithDescription("Timeout in milliseconds"),
+                }).
+                WithRequired("url"),
+            Returns: spec.ObjectProperty().
+                WithProperties(map[string]spec.Schema{
+                    "status":     *spec.IntegerProperty(),
+                    "statusText": *spec.StringProperty(),
+                    "headers":    *spec.ObjectProperty().WithAdditionalProperties(&spec.Schema{Type: []string{"string"}}),
+                    "body":       *spec.StringProperty().WithFormat("byte"),
+                }),
+            Errors: []hostapi.ErrorMetadata{
+                {Code: "INVALID_URL", Description: "URL is malformed"},
+                {Code: "HTTPS_REQUIRED", Description: "HTTPS is required but URL uses HTTP"},
+                {Code: "REQUEST_FAILED", Description: "HTTP request failed"},
+                {Code: "BODY_TOO_LARGE", Description: "Response body exceeds size limit"},
+            },
+        },
+    }
+}
+
+// Instance implementation
 type fetchAPI struct {
-    base       *BaseHostAPI
-    httpClient *http.Client
-    config     FetchConfig
+    serviceName string
+    logger      *slog.Logger
+    httpClient  *http.Client
+    config      FetchConfig
 }
 
 type FetchConfig struct {
@@ -489,100 +779,129 @@ type FetchConfig struct {
     RequireHTTPS     bool
 }
 
-func NewFetchAPI(config FetchConfig) HostAPI {
-    return &fetchAPI{
-        config: config,
-        httpClient: &http.Client{
-            CheckRedirect: func(req *http.Request, via []*http.Request) error {
-                if len(via) >= config.MaxRedirects {
-                    return fmt.Errorf("too many redirects")
-                }
-                return nil
-            },
-        },
-    }
-}
+func (f *fetchAPI) Name() string    { return "okra.fetch" }
+func (f *fetchAPI) Version() string { return "v1.0.0" }
 
-type fetchRequestFunction struct {
-    api *fetchAPI
-}
-
-func (f *fetchRequestFunction) Execute(ctx context.Context, params []uint64) ([]uint64, error) {
-    // ... extract request ...
-    
-    // Validate request
-    if err := f.validateRequest(&req); err != nil {
-        return f.returnError(err)
-    }
-    
-    // Parse URL
-    parsedURL, err := url.Parse(req.URL)
-    if err != nil {
-        return f.returnError(fmt.Errorf("invalid URL"))
-    }
-    
-    // Protocol validation
-    if f.api.config.RequireHTTPS && parsedURL.Scheme != "https" {
-        return f.returnError(fmt.Errorf("HTTPS required"))
-    }
-    
-    // Create HTTP request
-    body := []byte(nil)
-    if req.Body != "" {
-        body, err = base64.StdEncoding.DecodeString(req.Body)
+func (f *fetchAPI) Execute(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+    switch method {
+    case "request":
+        var req FetchRequest
+        if err := json.Unmarshal(params, &req); err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "INVALID_PARAMETERS",
+                Message: "Failed to parse fetch request",
+                Details: err.Error(),
+            }
+        }
+        
+        // Default method to GET
+        if req.Method == "" {
+            req.Method = "GET"
+        }
+        
+        // Validate request
+        if err := f.validateRequest(&req); err != nil {
+            return nil, err
+        }
+        
+        // Parse URL
+        parsedURL, err := url.Parse(req.URL)
         if err != nil {
-            return f.returnError(fmt.Errorf("invalid body encoding"))
+            return nil, &hostapi.HostAPIError{
+                Code:    "INVALID_URL",
+                Message: "Invalid URL format",
+                Details: err.Error(),
+            }
+        }
+        
+        // Protocol validation
+        if f.config.RequireHTTPS && parsedURL.Scheme != "https" {
+            return nil, &hostapi.HostAPIError{
+                Code:    "HTTPS_REQUIRED",
+                Message: "HTTPS is required for fetch requests",
+            }
+        }
+        
+        // Prepare request body
+        var body io.Reader
+        if req.Body != "" {
+            bodyBytes, err := base64.StdEncoding.DecodeString(req.Body)
+            if err != nil {
+                return nil, &hostapi.HostAPIError{
+                    Code:    "INVALID_BODY",
+                    Message: "Failed to decode request body",
+                }
+            }
+            body = bytes.NewReader(bodyBytes)
+        }
+        
+        // Create HTTP request
+        httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, body)
+        if err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "REQUEST_FAILED",
+                Message: "Failed to create HTTP request",
+                Details: err.Error(),
+            }
+        }
+        
+        // Set headers (with injection protection)
+        for k, v := range req.Headers {
+            if !isProtectedHeader(k) {
+                httpReq.Header.Set(k, v)
+            }
+        }
+        
+        // Apply timeout
+        timeout := f.config.DefaultTimeout
+        if req.Timeout > 0 {
+            timeout = time.Duration(req.Timeout) * time.Millisecond
+        }
+        
+        ctx, cancel := context.WithTimeout(ctx, timeout)
+        defer cancel()
+        
+        // Make request
+        resp, err := f.httpClient.Do(httpReq.WithContext(ctx))
+        if err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "REQUEST_FAILED",
+                Message: "HTTP request failed",
+                Details: err.Error(),
+            }
+        }
+        defer resp.Body.Close()
+        
+        // Read response with size limit
+        bodyReader := io.LimitReader(resp.Body, f.config.MaxBodySize)
+        respBody, err := io.ReadAll(bodyReader)
+        if err != nil {
+            return nil, &hostapi.HostAPIError{
+                Code:    "REQUEST_FAILED",
+                Message: "Failed to read response body",
+                Details: err.Error(),
+            }
+        }
+        
+        // Build response
+        headers := make(map[string]string)
+        for k, v := range resp.Header {
+            headers[k] = v[0] // Simplify multi-value headers
+        }
+        
+        return json.Marshal(FetchResponse{
+            Status:     resp.StatusCode,
+            StatusText: resp.Status,
+            Headers:    headers,
+            Body:       base64.StdEncoding.EncodeToString(respBody),
+        })
+        
+    default:
+        return nil, &hostapi.HostAPIError{
+            Code:    "METHOD_NOT_FOUND",
+            Message: fmt.Sprintf("Unknown method: %s", method),
         }
     }
-    
-    httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bytes.NewReader(body))
-    if err != nil {
-        return f.returnError(err)
-    }
-    
-    // Set headers (with injection protection)
-    for k, v := range req.Headers {
-        if isProtectedHeader(k) {
-            continue
-        }
-        httpReq.Header.Set(k, v)
-    }
-    
-    // Apply timeout
-    timeout := f.api.config.DefaultTimeout
-    if req.Timeout > 0 {
-        timeout = time.Duration(req.Timeout) * time.Millisecond
-    }
-    
-    ctx, cancel := context.WithTimeout(ctx, timeout)
-    defer cancel()
-    
-    // Make request
-    resp, err := f.api.httpClient.Do(httpReq.WithContext(ctx))
-    if err != nil {
-        return f.returnError(fmt.Errorf("request failed: %w", err))
-    }
-    defer resp.Body.Close()
-    
-    // Read response with size limit
-    bodyReader := io.LimitReader(resp.Body, f.api.config.MaxBodySize)
-    respBody, err := io.ReadAll(bodyReader)
-    if err != nil {
-        return f.returnError(fmt.Errorf("failed to read response"))
-    }
-    
-    // Build response
-    headers := make(map[string]string)
-    for k, v := range resp.Header {
-        headers[k] = v[0] // Simplify multi-value headers
-    }
-    
-    return f.returnSuccess(FetchResponse{
-        Status:     resp.StatusCode,
-        StatusText: resp.Status,
-        Headers:    headers,
-        Body:       base64.StdEncoding.EncodeToString(respBody),
-    })
 }
 ```
 
@@ -590,44 +909,78 @@ func (f *fetchRequestFunction) Execute(ctx context.Context, params []uint64) ([]
 
 ### Go Stubs
 
+Guest-side stubs use the unified host API interface. Here's an example for the log API:
+
 ```go
-// Generated okra package for guest code
-package okra
+// Generated package for okra.log
+package log
 
 import (
     "encoding/json"
     "fmt"
+    "github.com/okra/sdk/go/hostapi" // Common types
 )
 
-// Log provides structured logging
-type Log struct{}
+// Client provides access to the okra.log host API
+type Client struct{}
 
-func (l *Log) Debug(message string, context map[string]interface{}) error {
-    return l.write("debug", message, context)
+// NewClient creates a new log API client
+func NewClient() *Client {
+    return &Client{}
 }
 
-func (l *Log) Info(message string, context map[string]interface{}) error {
-    return l.write("info", message, context)
+// Debug writes a debug log message
+func (c *Client) Debug(message string, context map[string]interface{}) error {
+    return c.write("debug", message, context)
 }
 
-func (l *Log) Warn(message string, context map[string]interface{}) error {
-    return l.write("warn", message, context)
+// Info writes an info log message
+func (c *Client) Info(message string, context map[string]interface{}) error {
+    return c.write("info", message, context)
 }
 
-func (l *Log) Error(message string, context map[string]interface{}) error {
-    return l.write("error", message, context)
+// Warn writes a warning log message
+func (c *Client) Warn(message string, context map[string]interface{}) error {
+    return c.write("warn", message, context)
 }
 
-func (l *Log) write(level, message string, context map[string]interface{}) error {
-    req := LogWriteRequest{
+// Error writes an error log message
+func (c *Client) Error(message string, context map[string]interface{}) error {
+    return c.write("error", message, context)
+}
+
+func (c *Client) write(level, message string, context map[string]interface{}) error {
+    params := LogWriteRequest{
         Level:   level,
         Message: message,
         Context: context,
     }
     
-    resp, err := callHostAPI("okra.log", "write", req)
+    paramsJSON, err := json.Marshal(params)
+    if err != nil {
+        return fmt.Errorf("failed to marshal parameters: %w", err)
+    }
+    
+    req := hostapi.HostAPIRequest{
+        API:        "okra.log",
+        Method:     "write",
+        Parameters: paramsJSON,
+        Metadata:   hostapi.RequestMetadata{}, // Populated by runtime
+    }
+    
+    reqJSON, err := json.Marshal(req)
+    if err != nil {
+        return fmt.Errorf("failed to marshal request: %w", err)
+    }
+    
+    respJSON, err := hostapi.CallHost(string(reqJSON))
     if err != nil {
         return err
+    }
+    
+    var resp hostapi.HostAPIResponse
+    if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+        return fmt.Errorf("invalid response format: %w", err)
     }
     
     if !resp.Success {
@@ -637,182 +990,74 @@ func (l *Log) write(level, message string, context map[string]interface{}) error
     return nil
 }
 
-// State provides key-value storage
-type State struct{}
+// Import the host functions from the "okra" module
+//go:wasmimport okra run_host_api
+func runHostAPI(requestPtr, requestLen uint32) (responsePtr uint32, responseLen uint32)
 
-func (s *State) Get(key string) ([]byte, int64, error) {
-    req := StateGetRequest{Key: key}
-    resp, err := callHostAPI("okra.state", "get", req)
-    if err != nil {
-        return nil, 0, err
-    }
-    
-    if !resp.Success {
-        return nil, 0, fmt.Errorf("%s: %s", resp.Error.Code, resp.Error.Message)
-    }
-    
-    var result StateGetResponse
-    if err := json.Unmarshal(resp.Data, &result); err != nil {
-        return nil, 0, err
-    }
-    
-    if !result.Exists {
-        return nil, 0, ErrNotFound
-    }
-    
-    return result.Value, result.Version, nil
-}
+//go:wasmimport okra next
+func next(requestPtr, requestLen uint32) (responsePtr uint32, responseLen uint32)
 
-// ... similar implementations for Set, Delete, List, Increment ...
-
-// Helper function to call host APIs
-func callHostAPI(api, method string, payload interface{}) (*HostAPIResponse, error) {
-    // Serialize request
-    payloadData, err := json.Marshal(payload)
-    if err != nil {
-        return nil, err
-    }
-    
-    req := HostAPIRequest{
-        API:     api,
-        Method:  method,
-        Payload: payloadData,
-    }
-    
-    reqData, err := json.Marshal(req)
-    if err != nil {
-        return nil, err
-    }
-    
-    // Call WASM host function
-    respData := hostCall(reqData)
-    
-    // Parse response
-    var resp HostAPIResponse
-    if err := json.Unmarshal(respData, &resp); err != nil {
-        return nil, err
-    }
-    
-    return &resp, nil
-}
-
-// Low-level WASM imports
-//go:wasm-module okra
-//export host_call
-func hostCallImport(ptr, len uint32) uint32
-
-func hostCall(data []byte) []byte {
-    // Allocate memory and copy data
-    ptr := allocate(uint32(len(data)))
-    copy(memorySlice(ptr, uint32(len(data))), data)
-    
-    // Call host
-    respPtr := hostCallImport(ptr, uint32(len(data)))
-    
-    // Read response length (first 4 bytes)
-    respLen := *(*uint32)(unsafe.Pointer(uintptr(respPtr)))
-    
-    // Read response data
-    respData := make([]byte, respLen)
-    copy(respData, memorySlice(respPtr+4, respLen))
-    
-    // Free memory
-    deallocate(ptr)
-    deallocate(respPtr)
-    
-    return respData
-}
+// hostapi.CallHost is implemented by the SDK to handle memory management
+// It uses the allocate/deallocate functions exported by the main WASM module
 ```
 
 ### TypeScript Stubs
 
 ```typescript
-// Generated okra package for TypeScript
-export namespace okra {
-    // Log API
-    export class Log {
-        async debug(message: string, context?: Record<string, any>): Promise<void> {
-            return this.write('debug', message, context);
-        }
-        
-        async info(message: string, context?: Record<string, any>): Promise<void> {
-            return this.write('info', message, context);
-        }
-        
-        async warn(message: string, context?: Record<string, any>): Promise<void> {
-            return this.write('warn', message, context);
-        }
-        
-        async error(message: string, context?: Record<string, any>): Promise<void> {
-            return this.write('error', message, context);
-        }
-        
-        private async write(level: string, message: string, context?: Record<string, any>): Promise<void> {
-            const response = await callHostAPI('okra.log', 'write', {
-                level,
-                message,
-                context: context || {}
-            });
-            
-            if (!response.success) {
-                throw new Error(`${response.error.code}: ${response.error.message}`);
-            }
-        }
+// Generated package for okra.log
+import { HostAPIRequest, HostAPIResponse, callHost } from '@okra/sdk';
+
+export interface LogWriteRequest {
+    level: 'debug' | 'info' | 'warn' | 'error';
+    message: string;
+    context?: Record<string, any>;
+    timestamp?: string;
+}
+
+export class LogClient {
+    async debug(message: string, context?: Record<string, any>): Promise<void> {
+        return this.write('debug', message, context);
     }
     
-    // State API
-    export class State {
-        async get<T = any>(key: string): Promise<{ value: T; version: number } | null> {
-            const response = await callHostAPI('okra.state', 'get', { key });
-            
-            if (!response.success) {
-                throw new Error(`${response.error.code}: ${response.error.message}`);
-            }
-            
-            const result = response.data as StateGetResponse;
-            if (!result.exists) {
-                return null;
-            }
-            
-            return {
-                value: JSON.parse(atob(result.value)) as T,
-                version: result.version
-            };
-        }
-        
-        async set<T = any>(key: string, value: T, options?: { version?: number; ttl?: number }): Promise<number> {
-            const response = await callHostAPI('okra.state', 'set', {
-                key,
-                value: btoa(JSON.stringify(value)),
-                ...options
-            });
-            
-            if (!response.success) {
-                throw new Error(`${response.error.code}: ${response.error.message}`);
-            }
-            
-            return (response.data as StateSetResponse).version;
-        }
-        
-        // ... other methods ...
+    async info(message: string, context?: Record<string, any>): Promise<void> {
+        return this.write('info', message, context);
     }
     
-    // Helper to call host APIs
-    async function callHostAPI(api: string, method: string, payload: any): Promise<HostAPIResponse> {
-        const request: HostAPIRequest = {
-            api,
-            method,
-            payload: JSON.stringify(payload)
+    async warn(message: string, context?: Record<string, any>): Promise<void> {
+        return this.write('warn', message, context);
+    }
+    
+    async error(message: string, context?: Record<string, any>): Promise<void> {
+        return this.write('error', message, context);
+    }
+    
+    private async write(level: string, message: string, context?: Record<string, any>): Promise<void> {
+        const params: LogWriteRequest = {
+            level: level as any,
+            message,
+            context
         };
         
-        // Call WASM host function
-        const response = await hostCall(JSON.stringify(request));
-        return JSON.parse(response) as HostAPIResponse;
+        const request: HostAPIRequest = {
+            api: 'okra.log',
+            method: 'write',
+            parameters: JSON.stringify(params),
+            metadata: {} // Populated by runtime
+        };
+        
+        const response = await callHost(JSON.stringify(request));
+        const resp: HostAPIResponse = JSON.parse(response);
+        
+        if (!resp.success) {
+            throw new Error(`${resp.error?.code}: ${resp.error?.message}`);
+        }
     }
-    
-    // WASM imports
-    declare function hostCall(request: string): Promise<string>;
 }
+
+// The @okra/sdk package provides:
+// - Common types (HostAPIRequest, HostAPIResponse, etc.)
+// - callHost function that handles WASM memory management
+// - TypeScript declarations for WASM imports
 ```
 
 ## Testing Strategy
@@ -871,29 +1116,34 @@ export namespace okra {
 
 ## Implementation Plan
 
-### Phase 1: Foundation (Week 1)
-1. Implement base host API infrastructure
-2. Create memory accessor utilities
-3. Set up host API registry
-4. Implement JSON encoding/decoding
+### Phase 1: Foundation ✅ COMPLETED
+The host API infrastructure has been implemented in `internal/hostapi/`:
+- ✅ Host API interfaces (`HostAPI`, `HostAPIFactory`, `StreamingHostAPI`)
+- ✅ Host API registry for managing factories
+- ✅ Host API set for service-specific instances
+- ✅ Unified host function interface (`run_host_api`, `next`)
+- ✅ JSON encoding/decoding with proper error handling
+- ✅ Policy engine interface
+- ✅ Iterator support for streaming APIs
 
-### Phase 2: Core APIs (Week 2)
-1. Implement Log API
-2. Implement Env API
-3. Implement State API (in-memory backend)
-4. Write unit tests
+### Phase 2: Core APIs (Current Phase)
+1. Implement Log API factory and instance
+2. Implement Env API factory and instance
+3. Implement State API with in-memory backend
+4. Write unit tests for each API
 
-### Phase 3: Advanced APIs (Week 3)
-1. Implement Secrets API
-2. Implement Fetch API
-3. Add policy enforcement
-4. Integration testing
+### Phase 3: Advanced APIs
+1. Implement Secrets API with configurable backend
+2. Implement Fetch API with HTTP client
+3. Integration testing with real WASM modules
+4. Performance benchmarking
 
-### Phase 4: Guest Stubs & Polish (Week 4)
-1. Generate Go stubs
-2. Generate TypeScript stubs
-3. Performance optimization
-4. Documentation
+### Phase 4: Guest Stubs & Polish
+1. Create stub generator using existing codegen framework
+2. Generate Go stubs for each API
+3. Generate TypeScript stubs
+4. Create SDK packages for common types
+5. Documentation and examples
 
 ## Security Considerations
 

@@ -1,6 +1,6 @@
 # Registry System Design
 
-> **Last Updated**: 2025-07-19
+> **Last Updated**: 2025-07-20
 > 
 > **Design Review Updates**:
 > - Renamed `Registry` to `ArtifactRegistry` to avoid naming conflicts
@@ -8,6 +8,11 @@
 > - Added `Shutdown()` method to `RegistryClient` for graceful shutdown
 > - Clarified implementation will be in `internal/registry` package
 > - Enhanced error handling patterns and test coverage
+> - Added JSON field tags with camelCase naming to comply with OKRA conventions
+> - Renamed `Version` to `ArtifactVersion` to avoid confusion with `ServiceVersion`
+> - Renamed `CacheManager` to `ArtifactCacheManager` for clarity
+> - Added `AWSCredentials` struct definition
+> - Clarified JSON-only serialization for WASM boundaries
 
 ## 1. Overview
 
@@ -65,7 +70,7 @@ type ArtifactRegistry interface {
     Resolve(ctx context.Context, ref ArtifactRef) (Artifact, error)
     
     // List returns available versions for an FQN
-    List(ctx context.Context, fqn string) ([]Version, error)
+    List(ctx context.Context, fqn string) ([]ArtifactVersion, error)
     
     // GetChanges returns changes since a given time
     GetChanges(ctx context.Context, since time.Time) ([]ChangeEntry, error)
@@ -110,14 +115,15 @@ type RegistryClient interface {
     Publish(ctx context.Context, registryName string, artifact Artifact) error
     
     // GetCache returns the cache manager
-    GetCache() CacheManager
+    GetCache() ArtifactCacheManager
     
     // Shutdown gracefully shuts down the registry client
     Shutdown(ctx context.Context) error
 }
 
-// CacheManager handles local caching of registry artifacts
-type CacheManager interface {
+// ArtifactCacheManager handles local caching of registry artifacts
+// Renamed from CacheManager for clarity and to distinguish from other caching mechanisms
+type ArtifactCacheManager interface {
     // Get retrieves an artifact from cache
     Get(registryName string, ref ArtifactRef) (Artifact, error)
     
@@ -151,60 +157,69 @@ const (
 // This is distinct from build.BuildArtifacts which represents build outputs.
 // The registry Artifact represents a packaged, versioned artifact ready for distribution.
 type Artifact struct {
-    Type     ArtifactType
-    FQN      string
-    Version  Version
-    Metadata map[string]interface{}
-    Content  io.ReadCloser
-    Checksum string
+    Type     ArtifactType           `json:"type"`
+    FQN      string                 `json:"fqn"`
+    Version  ArtifactVersion        `json:"version"`
+    Metadata map[string]interface{} `json:"metadata,omitempty"`
+    Content  io.ReadCloser          `json:"-"` // Not serialized
+    Checksum string                 `json:"checksum"`
 }
 
 // ArtifactRef is a reference to an artifact
 type ArtifactRef struct {
-    FQN     string
-    Version VersionConstraint // Can be exact version or constraint like "^1.2.0"
-    Type    ArtifactType
+    FQN     string            `json:"fqn"`
+    Version VersionConstraint `json:"version"` // Can be exact version or constraint like "^1.2.0"
+    Type    ArtifactType      `json:"type"`
 }
 
-// Version represents a semantic version
-type Version struct {
-    Major int
-    Minor int
-    Patch int
-    Pre   string // Pre-release identifier
+// ArtifactVersion represents a semantic version for artifacts
+// Renamed from Version to avoid confusion with ServiceVersion from lifecycle management
+type ArtifactVersion struct {
+    Major int    `json:"major"`
+    Minor int    `json:"minor"`
+    Patch int    `json:"patch"`
+    Pre   string `json:"pre,omitempty"` // Pre-release identifier
 }
 
 // VersionConstraint represents a version requirement
 type VersionConstraint interface {
-    Matches(v Version) bool
+    Matches(v ArtifactVersion) bool
     String() string
 }
 
 // ChangeEntry represents a registry change
 type ChangeEntry struct {
-    FQN             string
-    Version         Version
-    Type            ArtifactType
-    UpdatedAt       time.Time
-    Summary         string
-    PreviousVersion *Version
+    FQN             string           `json:"fqn"`
+    Version         ArtifactVersion  `json:"version"`
+    Type            ArtifactType     `json:"type"`
+    UpdatedAt       time.Time        `json:"updatedAt"`
+    Summary         string           `json:"summary"`
+    PreviousVersion *ArtifactVersion `json:"previousVersion,omitempty"`
 }
 
 // RegistryConfig represents registry configuration
 type RegistryConfig struct {
-    Name     string
-    Types    []ArtifactType
-    Path     string // URL: file://, s3://, https://
-    Region   string // For S3
-    CacheTTL time.Duration
-    Auth     AuthConfig
+    Name     string         `json:"name"`
+    Types    []ArtifactType `json:"types"`
+    Path     string         `json:"path"`     // URL: file://, s3://, https://
+    Region   string         `json:"region"`   // For S3
+    CacheTTL time.Duration  `json:"cacheTtl"`
+    Auth     AuthConfig     `json:"auth"`
 }
 
 // AuthConfig represents authentication configuration
 type AuthConfig struct {
-    Type        string // "none", "iam", "token"
-    Token       string
-    Credentials *AWSCredentials
+    Type        string          `json:"type"`        // "none", "iam", "token"
+    Token       string          `json:"token,omitempty"`
+    Credentials *AWSCredentials `json:"credentials,omitempty"`
+}
+
+// AWSCredentials represents AWS authentication credentials
+type AWSCredentials struct {
+    AccessKeyID     string `json:"accessKeyId"`
+    SecretAccessKey string `json:"secretAccessKey"`
+    SessionToken    string `json:"sessionToken,omitempty"`
+    Region          string `json:"region"`
 }
 ```
 
@@ -249,7 +264,16 @@ RegistryFactory -> LocalRegistry/S3Registry: new
 The registry system will be implemented in the `internal/registry` package to avoid naming conflicts with existing code (e.g., `codegen.Registry`).
 
 ### Version Coordination
-The registry's `Version` type will coordinate with the `ServiceVersion` type from the service lifecycle management system. The registry `Version` focuses on artifact versioning (semver), while `ServiceVersion` handles runtime service instance versioning.
+The registry's `ArtifactVersion` type is distinct from the `ServiceVersion` type in the service lifecycle management system. The registry `ArtifactVersion` focuses on artifact versioning (semver), while `ServiceVersion` handles runtime service instance versioning.
+
+### Serialization Format
+All cross-boundary communication uses JSON serialization, consistent with OKRA's WASM patterns. This applies to:
+- Change log entries
+- Configuration files
+- Cache metadata
+- API responses
+
+Note: Protobuf is NOT used at WASM boundaries due to TinyGo's lack of reflection support.
 
 ### Storage Implementations
 
@@ -293,7 +317,7 @@ type registryImpl struct {
 
 ### Cache Implementation
 ```go
-type cacheManager struct {
+type artifactCacheManager struct {
     basePath string
     mu       sync.RWMutex
     index    map[string]cacheEntry
