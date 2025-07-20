@@ -370,6 +370,9 @@ okra db:validate
 
 # Seed database from seed files
 okra db:seed
+
+# Future: Preview SQL without generating files
+# okra db:migrate:preview
 ```
 
 ### Development Workflow
@@ -983,6 +986,12 @@ The current design focuses on explicit migrations via CLI commands, maintaining 
 2. Seed file handling
 3. Migration rollback strategies
 4. Schema validation commands
+
+### Phase 6: Enhanced Developer Experience
+1. Colorized diff output for `db:diff` command
+2. Add `db:migrate:preview` command to show SQL without generating files
+3. Syntax highlighting for schema changes
+4. Better visualization of migration complexity
 
 ## Cross-Database Compatibility
 
