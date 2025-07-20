@@ -94,8 +94,8 @@ func (b *TypeScriptBuilder) checkDependencies() error {
 	}
 
 	// Check for Javy last since it's the least likely to be installed
-	if _, err := exec.LookPath("javy"); err != nil {
-		return fmt.Errorf("javy not found. Install with: npm install -g @shopify/javy")
+	if _, err := findJavy(); err != nil {
+		return fmt.Errorf("javy not found. Install with: npm install -g @shopify/javy or download from https://github.com/bytecodealliance/javy/releases")
 	}
 
 	return nil
@@ -207,9 +207,42 @@ func (b *TypeScriptBuilder) runESBuild(tmpDir, outputPath string) error {
 	return nil
 }
 
+// findJavy looks for the javy executable in PATH and common locations
+func findJavy() (string, error) {
+	// First check if javy is in PATH
+	if javyPath, err := exec.LookPath("javy"); err == nil {
+		return javyPath, nil
+	}
+	
+	// Check in tools/bin relative to current working directory
+	cwd, err := os.Getwd()
+	if err == nil {
+		toolsPath := filepath.Join(cwd, "tools", "bin", "javy")
+		if _, err := os.Stat(toolsPath); err == nil {
+			return toolsPath, nil
+		}
+		
+		// Also check relative to parent directories (for when tests run in subdirs)
+		for i := 0; i < 5; i++ {
+			cwd = filepath.Dir(cwd)
+			toolsPath = filepath.Join(cwd, "tools", "bin", "javy")
+			if _, err := os.Stat(toolsPath); err == nil {
+				return toolsPath, nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("javy not found in PATH or tools/bin")
+}
+
 // runJavy executes the Javy compiler
 func (b *TypeScriptBuilder) runJavy(inputPath, outputPath string) error {
-	cmd := exec.Command("javy", "compile", inputPath, "-o", outputPath)
+	javyPath, err := findJavy()
+	if err != nil {
+		return err
+	}
+	
+	cmd := exec.Command(javyPath, "compile", inputPath, "-o", outputPath)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

@@ -31,8 +31,16 @@ func (g *Generator) Generate(s *schema.Schema) (string, error) {
 
 	// Write import for common types if needed
 	hasTimestamp := g.hasTimestampType(s)
-	if hasTimestamp {
-		buf.WriteString("import \"google/protobuf/timestamp.proto\";\n\n")
+	hasEmpty := g.hasEmptyInputType(s)
+	
+	if hasTimestamp || hasEmpty {
+		if hasTimestamp {
+			buf.WriteString("import \"google/protobuf/timestamp.proto\";\n")
+		}
+		if hasEmpty {
+			buf.WriteString("import \"google/protobuf/empty.proto\";\n")
+		}
+		buf.WriteString("\n")
 	}
 
 	// Generate enums
@@ -44,6 +52,9 @@ func (g *Generator) Generate(s *schema.Schema) (string, error) {
 	for _, typ := range s.Types {
 		g.generateMessage(&buf, &typ)
 	}
+
+	// Generate response messages for scalar return types
+	g.generateScalarResponseMessages(&buf, s)
 
 	// Generate service definitions
 	for _, service := range s.Services {
@@ -113,8 +124,26 @@ func (g *Generator) generateService(buf *bytes.Buffer, service *schema.Service) 
 		if method.Doc != "" {
 			buf.WriteString(fmt.Sprintf("  // %s\n", method.Doc))
 		}
+		
+		// Handle empty input type - use google.protobuf.Empty
+		inputType := method.InputType
+		if inputType == "" {
+			inputType = "google.protobuf.Empty"
+		}
+		
+		// Handle scalar output types - use generated response message
+		outputType := method.OutputType
+		if g.isScalarType(outputType) {
+			responseName := method.Name
+			// Capitalize first letter for message name
+			if len(responseName) > 0 {
+				responseName = strings.ToUpper(responseName[:1]) + responseName[1:]
+			}
+			outputType = responseName + "Response"
+		}
+		
 		buf.WriteString(fmt.Sprintf("  rpc %s(%s) returns (%s);\n",
-			method.Name, method.InputType, method.OutputType))
+			method.Name, inputType, outputType))
 	}
 	buf.WriteString("}\n\n")
 }
@@ -155,4 +184,58 @@ func (g *Generator) hasTimestampType(s *schema.Schema) bool {
 		}
 	}
 	return false
+}
+
+// hasEmptyInputType checks if any service methods have empty input types
+func (g *Generator) hasEmptyInputType(s *schema.Schema) bool {
+	for _, service := range s.Services {
+		for _, method := range service.Methods {
+			if method.InputType == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isScalarType checks if a type is a protobuf scalar type
+func (g *Generator) isScalarType(typeName string) bool {
+	switch typeName {
+	case "String", "ID", "Int", "Long", "Float", "Double", "Boolean", "Bytes":
+		return true
+	case "Time", "DateTime", "Timestamp":
+		// These map to google.protobuf.Timestamp which is a message type
+		return false
+	default:
+		return false
+	}
+}
+
+// generateScalarResponseMessages generates response message types for methods with scalar return types
+func (g *Generator) generateScalarResponseMessages(buf *bytes.Buffer, s *schema.Schema) {
+	// Collect all methods with scalar return types
+	scalarReturns := make(map[string]string) // methodName -> scalarType
+	
+	for _, service := range s.Services {
+		for _, method := range service.Methods {
+			if g.isScalarType(method.OutputType) {
+				responseName := method.Name
+				// Capitalize first letter for message name
+				if len(responseName) > 0 {
+					responseName = strings.ToUpper(responseName[:1]) + responseName[1:]
+				}
+				responseName += "Response"
+				scalarReturns[responseName] = method.OutputType
+			}
+		}
+	}
+	
+	// Generate message definitions
+	for responseName, scalarType := range scalarReturns {
+		buf.WriteString(fmt.Sprintf("// %s is the response message for methods returning %s\n", responseName, scalarType))
+		buf.WriteString(fmt.Sprintf("message %s {\n", responseName))
+		protoType := g.mapToProtoType(scalarType)
+		buf.WriteString(fmt.Sprintf("  %s response = 1;\n", protoType))
+		buf.WriteString("}\n\n")
+	}
 }

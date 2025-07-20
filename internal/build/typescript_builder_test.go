@@ -266,7 +266,8 @@ func TestTypeScriptBuilder_Build_Integration(t *testing.T) {
 		t.Skip("npm not found, skipping integration test")
 	}
 
-	if _, err := exec.LookPath("javy"); err != nil {
+	// Check if javy is available (in PATH or tools/bin)
+	if _, err := findJavy(); err != nil {
 		t.Skip("javy not found, skipping integration test")
 	}
 
@@ -336,15 +337,15 @@ export function add(input: { a: number; b: number }): { result: number } {
 	builder := NewTypeScriptBuilder(cfg, tmpDir, testSchema)
 	err = builder.Build()
 
-	// The build might fail if Javy has specific requirements
-	// But we can at least test that it attempts the build process
-	if err != nil {
-		// Check that it got past the initial stages
-		assert.NotContains(t, err.Error(), "node_modules not found")
-		assert.NotContains(t, err.Error(), "failed to create temp directory")
-	} else {
-		// If it succeeded, verify the output
-		wasmPath := filepath.Join(tmpDir, cfg.Build.Output)
-		assert.FileExists(t, wasmPath)
-	}
+	// The build should succeed now that we have javy
+	require.NoError(t, err, "TypeScript build should succeed")
+	
+	// Verify the output
+	wasmPath := filepath.Join(tmpDir, cfg.Build.Output)
+	assert.FileExists(t, wasmPath)
+	
+	// Verify the WASM file is not empty
+	info, err := os.Stat(wasmPath)
+	require.NoError(t, err)
+	assert.Greater(t, info.Size(), int64(0), "WASM file should not be empty")
 }

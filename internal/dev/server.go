@@ -177,6 +177,31 @@ func (s *Server) checkRequiredTools() error {
 // uses supported values. Early validation provides better error messages than
 // failing during runtime operations.
 func (s *Server) validateConfig() error {
+	// Validate required fields first
+	if s.config.Name == "" {
+		return fmt.Errorf("service name is required")
+	}
+
+	if s.config.Language == "" {
+		return fmt.Errorf("language is required")
+	}
+
+	// Validate language
+	switch s.config.Language {
+	case "go", "typescript":
+		// Valid languages
+	default:
+		return fmt.Errorf("unsupported language: %s (supported: go, typescript)", s.config.Language)
+	}
+
+	if s.config.Schema == "" {
+		return fmt.Errorf("schema file is required")
+	}
+
+	if s.config.Source == "" {
+		return fmt.Errorf("source directory is required")
+	}
+
 	// Check schema file exists
 	schemaPath := filepath.Join(s.projectRoot, s.config.Schema)
 	if _, err := os.Stat(schemaPath); err != nil {
@@ -187,14 +212,6 @@ func (s *Server) validateConfig() error {
 	sourcePath := filepath.Join(s.projectRoot, s.config.Source)
 	if _, err := os.Stat(sourcePath); err != nil {
 		return fmt.Errorf("source path not found: %s", sourcePath)
-	}
-
-	// Validate language
-	switch s.config.Language {
-	case "go", "typescript":
-		// Valid languages
-	default:
-		return fmt.Errorf("unsupported language: %s (supported: go, typescript)", s.config.Language)
 	}
 
 	return nil
@@ -276,8 +293,9 @@ func (s *Server) isSourceFile(path string) bool {
 			!strings.HasSuffix(path, "_test.go") &&
 			!strings.HasSuffix(path, "interface.go")
 	case "typescript":
-		return strings.HasSuffix(path, ".ts") &&
+		return (strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".js")) &&
 			!strings.HasSuffix(path, ".test.ts") &&
+			!strings.HasSuffix(path, ".test.js") &&
 			!strings.HasSuffix(path, ".interface.ts")
 	default:
 		return false

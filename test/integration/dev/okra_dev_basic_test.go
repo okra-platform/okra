@@ -43,7 +43,7 @@ func TestOkraDevBasic(t *testing.T) {
 }`
 	err = os.WriteFile(filepath.Join(tempDir, "okra.json"), []byte(configContent), 0644)
 	require.NoError(t, err)
-	
+
 	// Create service directory
 	err = os.MkdirAll(filepath.Join(tempDir, "service"), 0755)
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ go 1.21
 	cmd := exec.CommandContext(ctx, "okra", "dev")
 	cmd.Dir = tempDir
 	cmd.Env = os.Environ()
-	
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

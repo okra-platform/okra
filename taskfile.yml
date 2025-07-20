@@ -27,11 +27,6 @@ tasks:
     env:
       SKIP_INTEGRATION: "true"
 
-  test:integration:
-    desc: Runs only integration tests
-    cmds:
-      - go test -run Integration {{ .CLI_ARGS }} ./...
-
   test:watch:
     desc: Runs all go tests using gotestsum in watch mode
     cmds:

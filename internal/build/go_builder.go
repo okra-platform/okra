@@ -115,7 +115,11 @@ func (b *GoBuilder) Build() error {
 		} else {
 			// If source is a directory, append it to the module path
 			// Use forward slashes for import paths
-			userServiceImport = modulePath + "/" + strings.TrimSuffix(strings.ReplaceAll(cleanSource, string(filepath.Separator), "/"), "/")
+			if cleanSource == "" || cleanSource == "." {
+				userServiceImport = modulePath
+			} else {
+				userServiceImport = modulePath + "/" + strings.TrimSuffix(strings.ReplaceAll(cleanSource, string(filepath.Separator), "/"), "/")
+			}
 		}
 	}
 

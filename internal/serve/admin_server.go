@@ -16,11 +16,15 @@ type AdminServer interface {
 	Start(ctx context.Context, port int) error
 }
 
+// PackageLoader loads packages from various sources
+type PackageLoader func(ctx context.Context, source string) (*runtime.ServicePackage, error)
+
 // adminServer is the internal implementation of AdminServer
 type adminServer struct {
 	runtime        runtime.Runtime
 	connectGateway runtime.ConnectGateway
 	graphqlGateway runtime.GraphQLGateway
+	packageLoader  PackageLoader
 
 	// Track deployed services and their sources
 	deployedServices map[string]*DeployedService
@@ -61,10 +65,16 @@ type ErrorResponse struct {
 
 // NewAdminServer creates a new admin server
 func NewAdminServer(runtime runtime.Runtime, connectGateway runtime.ConnectGateway, graphqlGateway runtime.GraphQLGateway) AdminServer {
+	return NewAdminServerWithPackageLoader(runtime, connectGateway, graphqlGateway, LoadPackage)
+}
+
+// NewAdminServerWithPackageLoader creates a new admin server with a custom package loader
+func NewAdminServerWithPackageLoader(runtime runtime.Runtime, connectGateway runtime.ConnectGateway, graphqlGateway runtime.GraphQLGateway, packageLoader PackageLoader) AdminServer {
 	return &adminServer{
 		runtime:          runtime,
 		connectGateway:   connectGateway,
 		graphqlGateway:   graphqlGateway,
+		packageLoader:    packageLoader,
 		deployedServices: make(map[string]*DeployedService),
 	}
 }
@@ -233,7 +243,7 @@ func (s *adminServer) handleUndeploy(w http.ResponseWriter, r *http.Request) {
 // deployPackage deploys a package from the given source
 func (s *adminServer) deployPackage(ctx context.Context, source string, override bool) (string, []string, error) {
 	// Load the package
-	pkg, err := LoadPackage(ctx, source)
+	pkg, err := s.packageLoader(ctx, source)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to load package: %w", err)
 	}

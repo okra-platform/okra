@@ -2,6 +2,7 @@ package build
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -357,7 +358,7 @@ func TestGoBuilder_copyFile(t *testing.T) {
 
 func TestGoBuilder_Build_Integration(t *testing.T) {
 	// Skip if TinyGo is not available
-	if _, err := os.Stat("/usr/local/bin/tinygo"); os.IsNotExist(err) {
+	if _, err := exec.LookPath("tinygo"); err != nil {
 		t.Skip("TinyGo not installed, skipping integration test")
 	}
 
@@ -366,7 +367,7 @@ func TestGoBuilder_Build_Integration(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		// Create project structure
-		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "src"), 0755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "service"), 0755))
 		require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "types"), 0755))
 
 		// Create go.mod
@@ -403,7 +404,7 @@ type AddOutput struct {
 		))
 
 		// Create user service implementation
-		serviceContent := `package main
+		serviceContent := `package service
 
 import "github.com/test/myservice/types"
 
@@ -420,13 +421,14 @@ func (s *mathService) Add(input *types.AddInput) (*types.AddOutput, error) {
 }
 `
 		require.NoError(t, os.WriteFile(
-			filepath.Join(tmpDir, "service.go"),
+			filepath.Join(tmpDir, "service", "service.go"),
 			[]byte(serviceContent),
 			0644,
 		))
 
 		// Create config
 		cfg := &config.Config{
+			Source: "service",
 			Build: config.BuildConfig{
 				Output: "build/service.wasm",
 			},
