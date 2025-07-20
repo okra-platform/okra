@@ -33,18 +33,36 @@ type ConnectGateway interface {
 	Shutdown(ctx context.Context) error
 }
 
-// NewConnectGateway creates a new ConnectRPC gateway
-func NewConnectGateway() ConnectGateway {
-	return &connectGateway{
-		mux:      http.NewServeMux(),
-		services: make(map[string]*serviceHandler),
+// ConnectGatewayOption configures a ConnectGateway
+type ConnectGatewayOption func(*connectGateway)
+
+// WithRequestTimeout sets the timeout for actor requests
+func WithRequestTimeout(timeout time.Duration) ConnectGatewayOption {
+	return func(cg *connectGateway) {
+		cg.requestTimeout = timeout
 	}
 }
 
+// NewConnectGateway creates a new ConnectRPC gateway
+func NewConnectGateway(opts ...ConnectGatewayOption) ConnectGateway {
+	cg := &connectGateway{
+		mux:            http.NewServeMux(),
+		services:       make(map[string]*serviceHandler),
+		requestTimeout: 30 * time.Second, // Default timeout
+	}
+	
+	for _, opt := range opts {
+		opt(cg)
+	}
+	
+	return cg
+}
+
 type connectGateway struct {
-	mux      *http.ServeMux
-	mu       sync.RWMutex
-	services map[string]*serviceHandler
+	mux            *http.ServeMux
+	mu             sync.RWMutex
+	services       map[string]*serviceHandler
+	requestTimeout time.Duration
 }
 
 type serviceHandler struct {
@@ -147,19 +165,43 @@ func (g *connectGateway) createDynamicHandler(serviceDesc protoreflect.ServiceDe
 			inputMsg := dynamicpb.NewMessage(inputDesc)
 			outputMsg := dynamicpb.NewMessage(outputDesc)
 
+			// Check content type first
+			contentType := r.Header.Get("Content-Type")
+			
+			// Parse content type to get the base type (ignore parameters)
+			baseContentType := contentType
+			if idx := strings.Index(contentType, ";"); idx != -1 {
+				baseContentType = strings.TrimSpace(contentType[:idx])
+			}
+			
+			// Validate base content type
+			if baseContentType != "" && 
+				baseContentType != "application/json" && 
+				baseContentType != "application/connect+json" && 
+				baseContentType != "application/proto" &&
+				baseContentType != "application/x-protobuf" {
+				http.Error(w, "unsupported content type", http.StatusBadRequest)
+				return
+			}
+
+			// Set request size limit (10MB)
+			const maxRequestSize = 10 * 1024 * 1024
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestSize)
+
 			// Read request body
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
+				if err.Error() == "http: request body too large" {
+					http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+					return
+				}
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
 			defer r.Body.Close()
 
-			// Check content type to determine format
-			contentType := r.Header.Get("Content-Type")
-
 			// Unmarshal the request based on content type
-			if contentType == "application/json" || contentType == "application/connect+json" {
+			if baseContentType == "application/json" || baseContentType == "application/connect+json" {
 				// JSON format
 				if err := protojson.Unmarshal(body, inputMsg); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
@@ -193,9 +235,33 @@ func (g *connectGateway) createDynamicHandler(serviceDesc protoreflect.ServiceDe
 				Input:  jsonBytes, // Send JSON bytes to actor
 			}
 
+			// Determine timeout - use request context deadline if shorter than gateway timeout
+			timeout := g.requestTimeout
+			if deadline, ok := r.Context().Deadline(); ok {
+				if timeRemaining := time.Until(deadline); timeRemaining < timeout {
+					timeout = timeRemaining
+				}
+			}
+
 			// Send request to actor and wait for response
-			reply, err := actors.Ask(r.Context(), capturedActorPID, serviceRequest, 30*time.Second)
+			reply, err := actors.Ask(r.Context(), capturedActorPID, serviceRequest, timeout)
 			if err != nil {
+				// Check for context cancellation/timeout
+				errStr := err.Error()
+				
+				// Only treat as timeout if we have an actual context deadline that was exceeded
+				hasContextDeadline := false
+				if deadline, ok := r.Context().Deadline(); ok {
+					hasContextDeadline = time.Now().After(deadline)
+				}
+				
+				if (err == context.DeadlineExceeded || err == context.Canceled || 
+					strings.Contains(errStr, "context deadline exceeded") ||
+					strings.Contains(errStr, "context canceled")) || 
+					(errStr == "request timed out" && hasContextDeadline) {
+					http.Error(w, "request timeout", http.StatusRequestTimeout)
+					return
+				}
 				http.Error(w, fmt.Sprintf("actor request failed: %v", err), http.StatusInternalServerError)
 				return
 			}

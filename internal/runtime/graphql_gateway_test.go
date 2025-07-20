@@ -284,12 +284,13 @@ func TestGraphQLGateway_ErrorHandling(t *testing.T) {
 	handler.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
-	// Test: GET request not allowed
+	// Test: GET request serves playground
 	req = httptest.NewRequest(http.MethodGet, "/graphql/test", nil)
 	w = httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/html; charset=utf-8", w.Header().Get("Content-Type"))
 }
 
 func TestGraphQLGateway_ConcurrentAccess(t *testing.T) {

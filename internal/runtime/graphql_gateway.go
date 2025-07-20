@@ -166,9 +166,8 @@ func (g *graphqlGateway) Shutdown(ctx context.Context) error {
 
 // ServeHTTP handles GraphQL requests for a namespace
 func (h *namespaceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Handle GET requests for GraphQL playground in dev mode
+	// Handle GET requests by serving the playground
 	if r.Method == http.MethodGet {
-		// Check if we're in dev mode (could be passed via context or config)
 		h.servePlayground(w, r)
 		return
 	}

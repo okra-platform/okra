@@ -552,7 +552,7 @@ func TestConnectGateway_ContextCancellation(t *testing.T) {
 
 // Test: Panic recovery in handler
 func TestConnectGateway_PanicRecovery(t *testing.T) {
-	gateway := NewConnectGateway()
+	gateway := NewConnectGateway(WithRequestTimeout(1 * time.Second))
 	ctx := context.Background()
 
 	// Setup service with panicking actor
