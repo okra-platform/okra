@@ -276,12 +276,136 @@ func (s *sqlHostAPI) Close() error {
 ```
 
 #### 3. Query Builder
+
+The query builder will be implemented using [Squirrel](https://github.com/Masterminds/squirrel), a fluent SQL query builder for Go that provides:
+
+- Type-safe query construction
+- Automatic parameterization to prevent SQL injection
+- Support for complex queries with joins, subqueries, and aggregates
+- Database-agnostic query building
+
+Example implementation:
+```go
+import sq "github.com/Masterminds/squirrel"
+
+func (s *sqlHostAPI) buildSelectQuery(query SqlQuery) (string, []interface{}, error) {
+    // Start with base query
+    q := sq.Select(query.Columns...).From(query.Table)
+    
+    // Add WHERE conditions
+    if query.Where != nil {
+        predicate, err := s.buildPredicate(query.Where)
+        if err != nil {
+            return "", nil, err
+        }
+        q = q.Where(predicate)
+    }
+    
+    // Add JOINs
+    for _, join := range query.Join {
+        joinCond := fmt.Sprintf("%s = %s", join.On.LocalColumn, join.On.ForeignColumn)
+        switch join.Type {
+        case "inner":
+            q = q.InnerJoin(join.Table + " ON " + joinCond)
+        case "left":
+            q = q.LeftJoin(join.Table + " ON " + joinCond)
+        case "right":
+            q = q.RightJoin(join.Table + " ON " + joinCond)
+        }
+    }
+    
+    // Add GROUP BY, ORDER BY, LIMIT, OFFSET
+    if len(query.GroupBy) > 0 {
+        q = q.GroupBy(query.GroupBy...)
+    }
+    for _, order := range query.OrderBy {
+        col := order.Column
+        if order.Direction == "desc" {
+            col += " DESC"
+        }
+        q = q.OrderBy(col)
+    }
+    if query.Limit > 0 {
+        q = q.Limit(uint64(query.Limit))
+    }
+    if query.Offset > 0 {
+        q = q.Offset(uint64(query.Offset))
+    }
+    
+    return q.ToSql()
+}
+```
+
+Key features:
 - Converts JSON query structure to parameterized SQL
 - Validates table/column names against schema
 - Enforces query complexity limits
 - Generates efficient SQL with proper indexing hints
 
 #### 4. Mutation Handler
+
+Also implemented using Squirrel for consistent SQL generation:
+
+```go
+func (s *sqlHostAPI) buildMutation(mutation SqlMutation) (string, []interface{}, error) {
+    switch mutation.Action {
+    case "insert":
+        q := sq.Insert(mutation.Table)
+        if len(mutation.Values) > 0 {
+            cols := make([]string, 0, len(mutation.Values))
+            vals := make([]interface{}, 0, len(mutation.Values))
+            for col, val := range mutation.Values {
+                cols = append(cols, col)
+                vals = append(vals, val)
+            }
+            q = q.Columns(cols...).Values(vals...)
+        }
+        if len(mutation.Returning) > 0 {
+            q = q.Suffix("RETURNING " + strings.Join(mutation.Returning, ", "))
+        }
+        return q.ToSql()
+        
+    case "update":
+        q := sq.Update(mutation.Table)
+        for col, val := range mutation.Values {
+            q = q.Set(col, val)
+        }
+        if mutation.Where != nil {
+            predicate, err := s.buildPredicate(mutation.Where)
+            if err != nil {
+                return "", nil, err
+            }
+            q = q.Where(predicate)
+        } else if mutation.Id != nil {
+            q = q.Where(sq.Eq{"id": mutation.Id})
+        }
+        if len(mutation.Returning) > 0 {
+            q = q.Suffix("RETURNING " + strings.Join(mutation.Returning, ", "))
+        }
+        return q.ToSql()
+        
+    case "delete":
+        q := sq.Delete(mutation.Table)
+        if mutation.Where != nil {
+            predicate, err := s.buildPredicate(mutation.Where)
+            if err != nil {
+                return "", nil, err
+            }
+            q = q.Where(predicate)
+        } else if mutation.Id != nil {
+            q = q.Where(sq.Eq{"id": mutation.Id})
+        }
+        if len(mutation.Returning) > 0 {
+            q = q.Suffix("RETURNING " + strings.Join(mutation.Returning, ", "))
+        }
+        return q.ToSql()
+    }
+    
+    return "", nil, fmt.Errorf("invalid mutation action: %s", mutation.Action)
+}
+```
+
+Key features:
 - Supports INSERT, UPDATE, DELETE operations
 - Handles RETURNING clauses for updated data
 - Manages transaction boundaries
