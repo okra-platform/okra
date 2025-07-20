@@ -16,14 +16,18 @@ tasks:
       - goreleaser build --snapshot --clean
 
   test:
-    desc: Runs all go tests using gotestsum - supports passing gotestsum args
+    desc: Runs all tests - unit tests and integration tests
     cmds:
+      - echo "🧪 Running unit tests..."
       - gotestsum {{ .CLI_ARGS }} ./...
+      - echo "🚀 Running integration tests..."
+      - task: test:okra-dev
+      - task: test:okra-serve
 
   test:unit:
-    desc: Runs only unit tests (excludes integration tests)
+    desc: Runs only unit tests (excludes integration tests) - faster for development
     cmds:
-      - go test -short {{ .CLI_ARGS }} ./...
+      - gotestsum {{ .CLI_ARGS }} ./...
     env:
       SKIP_INTEGRATION: "true"
 

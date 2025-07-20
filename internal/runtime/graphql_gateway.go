@@ -17,7 +17,55 @@ import (
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/ast"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/astparser"
 	"github.com/wundergraph/graphql-go-tools/v2/pkg/astvalidation"
+	"github.com/wundergraph/graphql-go-tools/v2/pkg/operationreport"
 )
+
+// Interfaces for better testability through dependency injection
+
+// ActorClient provides an interface for actor communication
+type ActorClient interface {
+	Ask(ctx context.Context, pid *actors.PID, message *pb.ServiceRequest, timeout time.Duration) (*pb.ServiceResponse, error)
+}
+
+// SchemaParser provides an interface for GraphQL schema parsing
+type SchemaParser interface {
+	ParseGraphqlDocumentString(input string) (ast.Document, operationreport.Report)
+}
+
+// SchemaValidator provides an interface for GraphQL schema validation
+type SchemaValidator interface {
+	Validate(doc *ast.Document, schema *ast.Document, report *operationreport.Report)
+}
+
+// Default implementations using the actual libraries
+
+type defaultActorClient struct{}
+
+func (c *defaultActorClient) Ask(ctx context.Context, pid *actors.PID, message *pb.ServiceRequest, timeout time.Duration) (*pb.ServiceResponse, error) {
+	reply, err := actors.Ask(ctx, pid, message, timeout)
+	if err != nil {
+		return nil, err
+	}
+	response, ok := reply.(*pb.ServiceResponse)
+	if !ok {
+		return nil, fmt.Errorf("invalid response type from actor")
+	}
+	return response, nil
+}
+
+type defaultSchemaParser struct{}
+
+func (p *defaultSchemaParser) ParseGraphqlDocumentString(input string) (ast.Document, operationreport.Report) {
+	return astparser.ParseGraphqlDocumentString(input)
+}
+
+type defaultSchemaValidator struct {
+	validator *astvalidation.OperationValidator
+}
+
+func (v *defaultSchemaValidator) Validate(doc *ast.Document, schema *ast.Document, report *operationreport.Report) {
+	v.validator.Validate(doc, schema, report)
+}
 
 // GraphQLGateway provides HTTP connectivity to OKRA services via GraphQL
 type GraphQLGateway interface {
@@ -34,24 +82,42 @@ type GraphQLGateway interface {
 	Shutdown(ctx context.Context) error
 }
 
-// NewGraphQLGateway creates a new GraphQL gateway
+// NewGraphQLGateway creates a new GraphQL gateway with default dependencies
 func NewGraphQLGateway() GraphQLGateway {
+	return NewGraphQLGatewayWithDependencies(
+		&defaultActorClient{},
+		&defaultSchemaParser{},
+		&defaultSchemaValidator{validator: astvalidation.DefaultOperationValidator()},
+	)
+}
+
+// NewGraphQLGatewayWithDependencies creates a new GraphQL gateway with custom dependencies for testing
+func NewGraphQLGatewayWithDependencies(actorClient ActorClient, schemaParser SchemaParser, schemaValidator SchemaValidator) GraphQLGateway {
 	return &graphqlGateway{
-		namespaces: make(map[string]*namespaceHandler),
+		namespaces:      make(map[string]*namespaceHandler),
+		actorClient:     actorClient,
+		schemaParser:    schemaParser,
+		schemaValidator: schemaValidator,
 	}
 }
 
 type graphqlGateway struct {
-	mu         sync.RWMutex
-	namespaces map[string]*namespaceHandler
+	mu              sync.RWMutex
+	namespaces      map[string]*namespaceHandler
+	actorClient     ActorClient
+	schemaParser    SchemaParser
+	schemaValidator SchemaValidator
 }
 
 // namespaceHandler handles GraphQL requests for a specific namespace
 type namespaceHandler struct {
-	namespace  string
-	schema     *atomic.Value // holds *compiledSchema
-	services   map[string]*serviceInfo
-	servicesMu sync.RWMutex
+	namespace       string
+	schema          *atomic.Value // holds *compiledSchema
+	services        map[string]*serviceInfo
+	servicesMu      sync.RWMutex
+	actorClient     ActorClient
+	schemaParser    SchemaParser
+	schemaValidator SchemaValidator
 }
 
 type serviceInfo struct {
@@ -63,6 +129,70 @@ type serviceInfo struct {
 type compiledSchema struct {
 	schemaDocument *ast.Document
 	schemaString   string
+}
+
+// Value objects for better parameter management
+
+// QueryContext holds all information needed to execute a GraphQL query
+type QueryContext struct {
+	Document      *ast.Document
+	Variables     map[string]interface{}
+	Operation     *ast.OperationDefinition
+	OperationName string
+}
+
+// FieldResolutionContext holds information needed to resolve a GraphQL field
+type FieldResolutionContext struct {
+	FieldName    string
+	Arguments    map[string]interface{}
+	SelectionSet int32
+	HasSelection bool
+}
+
+// ValueResolutionContext holds information needed to resolve GraphQL values
+type ValueResolutionContext struct {
+	Document  *ast.Document
+	Value     ast.Value
+	Variables map[string]interface{}
+}
+
+// NewQueryContext creates a new QueryContext from request data
+func NewQueryContext(document *ast.Document, variables map[string]interface{}, operationName string) *QueryContext {
+	return &QueryContext{
+		Document:      document,
+		Variables:     variables,
+		OperationName: operationName,
+	}
+}
+
+// FindOperation finds the operation to execute based on the operation name
+func (qc *QueryContext) FindOperation() *ast.OperationDefinition {
+	for i := range qc.Document.OperationDefinitions {
+		op := &qc.Document.OperationDefinitions[i]
+		opName := qc.Document.OperationDefinitionNameString(i)
+		if qc.OperationName == "" || opName == qc.OperationName {
+			qc.Operation = op
+			return op
+		}
+	}
+	return nil
+}
+
+// NewFieldResolutionContext creates a new FieldResolutionContext
+func NewFieldResolutionContext(fieldName string, args map[string]interface{}) *FieldResolutionContext {
+	return &FieldResolutionContext{
+		FieldName: fieldName,
+		Arguments: args,
+	}
+}
+
+// NewValueResolutionContext creates a new ValueResolutionContext
+func NewValueResolutionContext(doc *ast.Document, value ast.Value, variables map[string]interface{}) *ValueResolutionContext {
+	return &ValueResolutionContext{
+		Document:  doc,
+		Value:     value,
+		Variables: variables,
+	}
 }
 
 // GraphQL request/response structures
@@ -127,9 +257,12 @@ func (g *graphqlGateway) UpdateService(ctx context.Context, namespace string, se
 	handler, exists := g.namespaces[namespace]
 	if !exists {
 		handler = &namespaceHandler{
-			namespace: namespace,
-			schema:    &atomic.Value{},
-			services:  make(map[string]*serviceInfo),
+			namespace:       namespace,
+			schema:          &atomic.Value{},
+			services:        make(map[string]*serviceInfo),
+			actorClient:     g.actorClient,
+			schemaParser:    g.schemaParser,
+			schemaValidator: g.schemaValidator,
 		}
 		g.namespaces[namespace] = handler
 	}
@@ -160,7 +293,11 @@ func (g *graphqlGateway) Shutdown(ctx context.Context) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.namespaces = make(map[string]*namespaceHandler)
+	// Clear all namespaces
+	for namespace := range g.namespaces {
+		delete(g.namespaces, namespace)
+	}
+
 	return nil
 }
 
@@ -195,22 +332,22 @@ func (h *namespaceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	compiled := schemaVal.(*compiledSchema)
 
 	// Parse the query
-	query, report := astparser.ParseGraphqlDocumentString(req.Query)
+	query, report := h.schemaParser.ParseGraphqlDocumentString(req.Query)
 	if report.HasErrors() {
 		h.sendErrorResponse(w, "Query parse error", fmt.Errorf("%s", report.Error()))
 		return
 	}
 
 	// Validate the query against schema
-	validator := astvalidation.DefaultOperationValidator()
-	validator.Validate(&query, compiled.schemaDocument, &report)
+	h.schemaValidator.Validate(&query, compiled.schemaDocument, &report)
 	if report.HasErrors() {
 		h.sendErrorResponse(w, "Query validation error", fmt.Errorf("%s", report.Error()))
 		return
 	}
 
-	// Execute the query
-	result, err := h.executeQuery(r.Context(), &query, req.Variables, req.OperationName)
+	// Create query context and execute the query
+	queryCtx := NewQueryContext(&query, req.Variables, req.OperationName)
+	result, err := h.executeQuery(r.Context(), queryCtx)
 	if err != nil {
 		h.sendErrorResponse(w, "Query execution error", err)
 		return
@@ -221,18 +358,9 @@ func (h *namespaceHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-func (h *namespaceHandler) executeQuery(ctx context.Context, query *ast.Document, variables map[string]interface{}, operationName string) (*graphqlResponse, error) {
+func (h *namespaceHandler) executeQuery(ctx context.Context, queryCtx *QueryContext) (*graphqlResponse, error) {
 	// Find the operation to execute
-	var operation *ast.OperationDefinition
-	for i := range query.OperationDefinitions {
-		op := &query.OperationDefinitions[i]
-		opName := query.OperationDefinitionNameString(i)
-		if operationName == "" || opName == operationName {
-			operation = op
-			break
-		}
-	}
-
+	operation := queryCtx.FindOperation()
 	if operation == nil {
 		return nil, fmt.Errorf("operation not found")
 	}
@@ -240,9 +368,9 @@ func (h *namespaceHandler) executeQuery(ctx context.Context, query *ast.Document
 	// Execute based on operation type
 	switch operation.OperationType {
 	case ast.OperationTypeQuery:
-		return h.executeQueryOperation(ctx, query, operation, variables)
+		return h.executeQueryOperation(ctx, queryCtx.Document, operation, queryCtx.Variables)
 	case ast.OperationTypeMutation:
-		return h.executeMutationOperation(ctx, query, operation, variables)
+		return h.executeMutationOperation(ctx, queryCtx.Document, operation, queryCtx.Variables)
 	default:
 		return nil, fmt.Errorf("unsupported operation type")
 	}
@@ -311,24 +439,22 @@ func (h *namespaceHandler) executeSelection(ctx context.Context, doc *ast.Docume
 
 		// Process sub-selections if any
 		if field.HasSelections {
-			subResult := make(map[string]interface{})
-			for _, subSelection := range doc.SelectionSets[field.SelectionSet].SelectionRefs {
-				if err := h.executeSelection(ctx, doc, subSelection, subResult, variables); err != nil {
-					return err
-				}
-			}
-			// Merge field result with sub-selections
+			// If we have sub-selections, we need to extract fields from the response object
 			if fieldResult != nil {
 				if fieldMap, ok := fieldResult.(map[string]interface{}); ok {
-					for k, v := range subResult {
-						fieldMap[k] = v
+					// Extract only the requested sub-fields from the response object
+					subResult := make(map[string]interface{})
+					for _, subSelection := range doc.SelectionSets[field.SelectionSet].SelectionRefs {
+						if err := h.extractFieldFromObject(doc, subSelection, fieldMap, subResult); err != nil {
+							return err
+						}
 					}
-					result[fieldName] = fieldMap
+					result[fieldName] = subResult
 				} else {
 					result[fieldName] = fieldResult
 				}
 			} else {
-				result[fieldName] = subResult
+				result[fieldName] = nil
 			}
 		} else {
 			result[fieldName] = fieldResult
@@ -341,32 +467,72 @@ func (h *namespaceHandler) executeSelection(ctx context.Context, doc *ast.Docume
 	}
 }
 
+// extractFieldFromObject extracts a field from a response object (not a service method call)
+func (h *namespaceHandler) extractFieldFromObject(doc *ast.Document, selectionRef int, sourceObject map[string]interface{}, result map[string]interface{}) error {
+	selection := doc.Selections[selectionRef]
+	
+	switch selection.Kind {
+	case ast.SelectionKindField:
+		fieldName := doc.FieldNameString(selection.Ref)
+		
+		// Extract the field value from the source object
+		if value, exists := sourceObject[fieldName]; exists {
+			result[fieldName] = value
+		} else {
+			result[fieldName] = nil
+		}
+		
+		return nil
+		
+	default:
+		return fmt.Errorf("unsupported selection kind in field extraction")
+	}
+}
+
 func (h *namespaceHandler) resolveField(ctx context.Context, fieldName string, args map[string]interface{}) (interface{}, error) {
-	// Find the service and method for this field
+	// Find the service for this field
+	targetService, methodName, err := h.findServiceForField(fieldName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the service request
+	serviceRequest, err := h.buildServiceRequest(methodName, args)
+	if err != nil {
+		return nil, err
+	}
+
+	// Call the service actor
+	serviceResponse, err := h.callServiceActor(ctx, targetService.actorPID, serviceRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the response
+	return h.parseServiceResponse(serviceResponse)
+}
+
+// findServiceForField finds the service and method for a given GraphQL field
+func (h *namespaceHandler) findServiceForField(fieldName string) (*serviceInfo, string, error) {
 	h.servicesMu.RLock()
 	defer h.servicesMu.RUnlock()
-
-	var targetService *serviceInfo
-	var methodName string
 
 	// Look for the method in all services
 	for _, service := range h.services {
 		for _, svc := range service.schema.Services {
 			for _, method := range svc.Methods {
 				if method.Name == fieldName {
-					targetService = service
-					methodName = method.Name
-					goto found
+					return service, method.Name, nil
 				}
 			}
 		}
 	}
 
-found:
-	if targetService == nil {
-		return nil, fmt.Errorf("method %s not found", fieldName)
-	}
+	return nil, "", fmt.Errorf("method %s not found", fieldName)
+}
 
+// buildServiceRequest creates a protobuf service request from GraphQL arguments
+func (h *namespaceHandler) buildServiceRequest(methodName string, args map[string]interface{}) (*pb.ServiceRequest, error) {
 	// Get input from arguments
 	input, ok := args["input"]
 	if !ok {
@@ -379,22 +545,17 @@ found:
 		return nil, fmt.Errorf("failed to marshal input: %w", err)
 	}
 
-	// Create service request
-	serviceRequest := &pb.ServiceRequest{
+	return &pb.ServiceRequest{
 		Method: methodName,
 		Input:  inputJSON,
-	}
+	}, nil
+}
 
-	// Send request to actor
-	reply, err := actors.Ask(ctx, targetService.actorPID, serviceRequest, 30*time.Second)
+// callServiceActor sends a request to the service actor and returns the response
+func (h *namespaceHandler) callServiceActor(ctx context.Context, pid *actors.PID, request *pb.ServiceRequest) (*pb.ServiceResponse, error) {
+	serviceResponse, err := h.actorClient.Ask(ctx, pid, request, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("actor request failed: %w", err)
-	}
-
-	// Cast response
-	serviceResponse, ok := reply.(*pb.ServiceResponse)
-	if !ok {
-		return nil, fmt.Errorf("invalid response type from actor")
 	}
 
 	// Check for errors
@@ -402,68 +563,134 @@ found:
 		return nil, fmt.Errorf("%s", serviceResponse.Error.Message)
 	}
 
-	// Parse response
+	return serviceResponse, nil
+}
+
+// parseServiceResponse parses the JSON output from a service response
+func (h *namespaceHandler) parseServiceResponse(response *pb.ServiceResponse) (interface{}, error) {
 	var result interface{}
-	if err := json.Unmarshal(serviceResponse.Output, &result); err != nil {
+	if err := json.Unmarshal(response.Output, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-
 	return result, nil
 }
 
 func (h *namespaceHandler) resolveValue(doc *ast.Document, value ast.Value, variables map[string]interface{}) (interface{}, error) {
-	switch value.Kind {
+	ctx := NewValueResolutionContext(doc, value, variables)
+	return h.resolveValueWithContext(ctx)
+}
+
+func (h *namespaceHandler) resolveValueWithContext(ctx *ValueResolutionContext) (interface{}, error) {
+	switch ctx.Value.Kind {
 	case ast.ValueKindString:
-		return doc.StringValueContentString(value.Ref), nil
+		return h.resolveStringValue(ctx.Document, ctx.Value)
 	case ast.ValueKindInteger:
-		intStr := doc.IntValueRaw(value.Ref)
-		intVal, err := strconv.ParseInt(string(intStr), 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		return intVal, nil
+		return h.resolveIntegerValue(ctx.Document, ctx.Value)
 	case ast.ValueKindFloat:
-		floatStr := doc.FloatValueRaw(value.Ref)
-		floatVal, err := strconv.ParseFloat(string(floatStr), 64)
+		return h.resolveFloatValue(ctx.Document, ctx.Value)
+	case ast.ValueKindBoolean:
+		return h.resolveBooleanValue(ctx.Document, ctx.Value)
+	case ast.ValueKindNull:
+		return h.resolveNullValue()
+	case ast.ValueKindObject:
+		return h.resolveObjectValueWithContext(ctx)
+	case ast.ValueKindList:
+		return h.resolveListValueWithContext(ctx)
+	case ast.ValueKindVariable:
+		return h.resolveVariableValueWithContext(ctx)
+	default:
+		return nil, fmt.Errorf("unsupported value kind: %v", ctx.Value.Kind)
+	}
+}
+
+// resolveStringValue resolves a GraphQL string value
+func (h *namespaceHandler) resolveStringValue(doc *ast.Document, value ast.Value) (interface{}, error) {
+	return doc.StringValueContentString(value.Ref), nil
+}
+
+// resolveIntegerValue resolves a GraphQL integer value
+func (h *namespaceHandler) resolveIntegerValue(doc *ast.Document, value ast.Value) (interface{}, error) {
+	intStr := doc.IntValueRaw(value.Ref)
+	intVal, err := strconv.ParseInt(string(intStr), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return intVal, nil
+}
+
+// resolveFloatValue resolves a GraphQL float value
+func (h *namespaceHandler) resolveFloatValue(doc *ast.Document, value ast.Value) (interface{}, error) {
+	floatStr := doc.FloatValueRaw(value.Ref)
+	floatVal, err := strconv.ParseFloat(string(floatStr), 64)
+	if err != nil {
+		return nil, err
+	}
+	return floatVal, nil
+}
+
+// resolveBooleanValue resolves a GraphQL boolean value
+func (h *namespaceHandler) resolveBooleanValue(doc *ast.Document, value ast.Value) (interface{}, error) {
+	return doc.BooleanValue(value.Ref), nil
+}
+
+// resolveNullValue resolves a GraphQL null value
+func (h *namespaceHandler) resolveNullValue() (interface{}, error) {
+	return nil, nil
+}
+
+// resolveObjectValue resolves a GraphQL object value
+func (h *namespaceHandler) resolveObjectValue(doc *ast.Document, value ast.Value, variables map[string]interface{}) (interface{}, error) {
+	ctx := NewValueResolutionContext(doc, value, variables)
+	return h.resolveObjectValueWithContext(ctx)
+}
+
+// resolveObjectValueWithContext resolves a GraphQL object value using context
+func (h *namespaceHandler) resolveObjectValueWithContext(ctx *ValueResolutionContext) (interface{}, error) {
+	obj := make(map[string]interface{})
+	for _, fieldRef := range ctx.Document.ObjectValues[ctx.Value.Ref].Refs {
+		field := ctx.Document.ObjectFields[fieldRef]
+		fieldName := ctx.Document.ObjectFieldNameString(fieldRef)
+		fieldValue, err := h.resolveValue(ctx.Document, field.Value, ctx.Variables)
 		if err != nil {
 			return nil, err
 		}
-		return floatVal, nil
-	case ast.ValueKindBoolean:
-		return doc.BooleanValue(value.Ref), nil
-	case ast.ValueKindNull:
-		return nil, nil
-	case ast.ValueKindObject:
-		obj := make(map[string]interface{})
-		for _, fieldRef := range doc.ObjectValues[value.Ref].Refs {
-			field := doc.ObjectFields[fieldRef]
-			fieldName := doc.ObjectFieldNameString(fieldRef)
-			fieldValue, err := h.resolveValue(doc, field.Value, variables)
-			if err != nil {
-				return nil, err
-			}
-			obj[fieldName] = fieldValue
-		}
-		return obj, nil
-	case ast.ValueKindList:
-		list := make([]interface{}, 0)
-		for _, valueRef := range doc.ListValues[value.Ref].Refs {
-			itemValue, err := h.resolveValue(doc, doc.Values[valueRef], variables)
-			if err != nil {
-				return nil, err
-			}
-			list = append(list, itemValue)
-		}
-		return list, nil
-	case ast.ValueKindVariable:
-		varName := doc.VariableValueNameString(value.Ref)
-		if val, ok := variables[varName]; ok {
-			return val, nil
-		}
-		return nil, fmt.Errorf("variable %s not found", varName)
-	default:
-		return nil, fmt.Errorf("unsupported value kind: %v", value.Kind)
+		obj[fieldName] = fieldValue
 	}
+	return obj, nil
+}
+
+// resolveListValue resolves a GraphQL list value
+func (h *namespaceHandler) resolveListValue(doc *ast.Document, value ast.Value, variables map[string]interface{}) (interface{}, error) {
+	ctx := NewValueResolutionContext(doc, value, variables)
+	return h.resolveListValueWithContext(ctx)
+}
+
+// resolveListValueWithContext resolves a GraphQL list value using context
+func (h *namespaceHandler) resolveListValueWithContext(ctx *ValueResolutionContext) (interface{}, error) {
+	list := make([]interface{}, 0)
+	for _, valueRef := range ctx.Document.ListValues[ctx.Value.Ref].Refs {
+		itemValue, err := h.resolveValue(ctx.Document, ctx.Document.Values[valueRef], ctx.Variables)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, itemValue)
+	}
+	return list, nil
+}
+
+// resolveVariableValue resolves a GraphQL variable value
+func (h *namespaceHandler) resolveVariableValue(doc *ast.Document, value ast.Value, variables map[string]interface{}) (interface{}, error) {
+	ctx := NewValueResolutionContext(doc, value, variables)
+	return h.resolveVariableValueWithContext(ctx)
+}
+
+// resolveVariableValueWithContext resolves a GraphQL variable value using context
+func (h *namespaceHandler) resolveVariableValueWithContext(ctx *ValueResolutionContext) (interface{}, error) {
+	varName := ctx.Document.VariableValueNameString(ctx.Value.Ref)
+	if val, ok := ctx.Variables[varName]; ok {
+		return val, nil
+	}
+	return nil, fmt.Errorf("variable %s not found", varName)
 }
 
 func (h *namespaceHandler) handleIntrospection(ctx context.Context, doc *ast.Document, field *ast.Field, fieldName string, result map[string]interface{}) error {
@@ -509,7 +736,7 @@ func (h *namespaceHandler) regenerateSchema() error {
 	}
 
 	// Parse the schema
-	doc, report := astparser.ParseGraphqlDocumentString(schemaStr)
+	doc, report := h.schemaParser.ParseGraphqlDocumentString(schemaStr)
 	if report.HasErrors() {
 		return fmt.Errorf("failed to parse GraphQL schema: %v", report)
 	}

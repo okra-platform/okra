@@ -4,15 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/okra-platform/okra/internal/runtime/pb"
 	"github.com/okra-platform/okra/internal/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tochemey/goakt/v2/actors"
+	"github.com/wundergraph/graphql-go-tools/v2/pkg/ast"
+	"github.com/wundergraph/graphql-go-tools/v2/pkg/operationreport"
 )
 
 // Test plan for GraphQL Gateway:
@@ -562,4 +566,262 @@ func (m *mockServiceActor) PreStart(ctx context.Context) error {
 
 func (m *mockServiceActor) PostStop(ctx context.Context) error {
 	return nil
+}
+
+// Mock implementations for testing refactored methods
+
+type mockActorClient struct {
+	responses map[string]*pb.ServiceResponse
+	errors    map[string]error
+}
+
+func (m *mockActorClient) Ask(ctx context.Context, pid *actors.PID, message *pb.ServiceRequest, timeout time.Duration) (*pb.ServiceResponse, error) {
+	if err, ok := m.errors[message.Method]; ok {
+		return nil, err
+	}
+	if response, ok := m.responses[message.Method]; ok {
+		return response, nil
+	}
+	return &pb.ServiceResponse{
+		Error: &pb.ServiceError{
+			Code:    "METHOD_NOT_FOUND",
+			Message: "Method not found",
+		},
+	}, nil
+}
+
+type mockSchemaParser struct {
+	parseError bool
+}
+
+func (m *mockSchemaParser) ParseGraphqlDocumentString(input string) (ast.Document, operationreport.Report) {
+	doc := ast.Document{}
+	report := operationreport.Report{}
+	if m.parseError {
+		report.AddExternalError(operationreport.ExternalError{
+			Message: "Parse error",
+		})
+	}
+	return doc, report
+}
+
+type mockSchemaValidator struct {
+	validateError bool
+}
+
+func (m *mockSchemaValidator) Validate(doc *ast.Document, schema *ast.Document, report *operationreport.Report) {
+	if m.validateError {
+		report.AddExternalError(operationreport.ExternalError{
+			Message: "Validation error",
+		})
+	}
+}
+
+// Tests for decomposed methods
+
+func TestGraphQLGateway_DependencyInjection(t *testing.T) {
+	// Test: Gateway can be created with custom dependencies
+	mockActor := &mockActorClient{
+		responses: make(map[string]*pb.ServiceResponse),
+		errors:    make(map[string]error),
+	}
+	mockParser := &mockSchemaParser{}
+	mockValidator := &mockSchemaValidator{}
+
+	gateway := NewGraphQLGatewayWithDependencies(mockActor, mockParser, mockValidator)
+	require.NotNil(t, gateway)
+
+	handler := gateway.Handler()
+	require.NotNil(t, handler)
+}
+
+func TestNamespaceHandler_FindServiceForField(t *testing.T) {
+	// Test: findServiceForField correctly locates services
+	handler := &namespaceHandler{
+		services: map[string]*serviceInfo{
+			"TestService": {
+				schema: &schema.Schema{
+					Services: []schema.Service{
+						{
+							Name: "TestService",
+							Methods: []schema.Method{
+								{Name: "getUser", InputType: "GetUserRequest", OutputType: "User"},
+								{Name: "createUser", InputType: "CreateUserRequest", OutputType: "User"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Test: Find existing method
+	service, methodName, err := handler.findServiceForField("getUser")
+	assert.NoError(t, err)
+	assert.NotNil(t, service)
+	assert.Equal(t, "getUser", methodName)
+
+	// Test: Method not found
+	_, _, err = handler.findServiceForField("nonExistentMethod")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "method nonExistentMethod not found")
+}
+
+func TestNamespaceHandler_BuildServiceRequest(t *testing.T) {
+	// Test: buildServiceRequest creates proper protobuf requests
+	handler := &namespaceHandler{}
+
+	// Test: Valid input
+	args := map[string]interface{}{
+		"input": map[string]interface{}{
+			"userId": "123",
+			"name":   "John Doe",
+		},
+	}
+
+	request, err := handler.buildServiceRequest("getUser", args)
+	assert.NoError(t, err)
+	assert.Equal(t, "getUser", request.Method)
+	assert.Contains(t, string(request.Input), "userId")
+	assert.Contains(t, string(request.Input), "123")
+
+	// Test: Missing input argument
+	_, err = handler.buildServiceRequest("getUser", map[string]interface{}{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "input argument required")
+}
+
+func TestNamespaceHandler_CallServiceActor(t *testing.T) {
+	// Test: callServiceActor handles various response scenarios
+	mockClient := &mockActorClient{
+		responses: map[string]*pb.ServiceResponse{
+			"getUser": {
+				Output: []byte(`{"id": "123", "name": "John"}`),
+			},
+		},
+		errors: map[string]error{
+			"failingMethod": errors.New("network error"),
+		},
+	}
+
+	handler := &namespaceHandler{
+		actorClient: mockClient,
+	}
+
+	// Test: Successful call
+	request := &pb.ServiceRequest{Method: "getUser", Input: []byte(`{}`)}
+	response, err := handler.callServiceActor(context.Background(), &actors.PID{}, request)
+	assert.NoError(t, err)
+	assert.NotNil(t, response)
+	assert.Contains(t, string(response.Output), "John")
+
+	// Test: Actor error
+	request = &pb.ServiceRequest{Method: "failingMethod", Input: []byte(`{}`)}
+	_, err = handler.callServiceActor(context.Background(), &actors.PID{}, request)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "actor request failed")
+
+	// Test: Service error response
+	mockClient.responses["errorMethod"] = &pb.ServiceResponse{
+		Error: &pb.ServiceError{
+			Code:    "VALIDATION_ERROR",
+			Message: "Invalid input",
+		},
+	}
+	request = &pb.ServiceRequest{Method: "errorMethod", Input: []byte(`{}`)}
+	_, err = handler.callServiceActor(context.Background(), &actors.PID{}, request)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Invalid input")
+}
+
+func TestNamespaceHandler_ExtractFieldFromObject(t *testing.T) {
+	// Test: extractFieldFromObject extracts fields from response objects correctly
+	t.Skip("Need to implement proper AST setup for this test")
+	// TODO: Add comprehensive test when AST structure is better understood
+}
+
+func TestNamespaceHandler_ParseServiceResponse(t *testing.T) {
+	// Test: parseServiceResponse handles various JSON formats
+	handler := &namespaceHandler{}
+
+	// Test: Valid JSON object
+	response := &pb.ServiceResponse{
+		Output: []byte(`{"id": "123", "name": "John Doe", "active": true}`),
+	}
+	result, err := handler.parseServiceResponse(response)
+	assert.NoError(t, err)
+	resultMap := result.(map[string]interface{})
+	assert.Equal(t, "123", resultMap["id"])
+	assert.Equal(t, "John Doe", resultMap["name"])
+	assert.Equal(t, true, resultMap["active"])
+
+	// Test: Valid JSON array
+	response = &pb.ServiceResponse{
+		Output: []byte(`[{"id": "1"}, {"id": "2"}]`),
+	}
+	result, err = handler.parseServiceResponse(response)
+	assert.NoError(t, err)
+	resultArray := result.([]interface{})
+	assert.Len(t, resultArray, 2)
+
+	// Test: Invalid JSON
+	response = &pb.ServiceResponse{
+		Output: []byte(`invalid json`),
+	}
+	_, err = handler.parseServiceResponse(response)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to unmarshal response")
+}
+
+func TestNamespaceHandler_ResolveValueMethods(t *testing.T) {
+	// Test: Individual value resolution methods work correctly
+	handler := &namespaceHandler{}
+
+	// Test: resolveNullValue
+	result, err := handler.resolveNullValue()
+	assert.NoError(t, err)
+	assert.Nil(t, result)
+
+	// Test: resolveBooleanValue
+	// Note: This would require setting up AST document with actual boolean values
+	// For now, we'll test the error handling paths
+}
+
+func TestGraphQLGateway_Shutdown(t *testing.T) {
+	// Test: Shutdown properly clears namespaces
+	gateway := NewGraphQLGateway()
+	ctx := context.Background()
+
+	// Add some namespaces
+	testSchema := &schema.Schema{
+		Meta:     schema.Metadata{Namespace: "test1"},
+		Services: []schema.Service{{Name: "TestService"}},
+	}
+	
+	err := gateway.UpdateService(ctx, "test1", testSchema, &actors.PID{})
+	require.NoError(t, err)
+	
+	err = gateway.UpdateService(ctx, "test2", testSchema, &actors.PID{})
+	require.NoError(t, err)
+
+	// Verify namespaces exist
+	req := httptest.NewRequest(http.MethodPost, "/graphql/test1", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	
+	handler := gateway.Handler()
+	handler.ServeHTTP(w, req)
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+
+	// Shutdown
+	err = gateway.Shutdown(ctx)
+	assert.NoError(t, err)
+
+	// Verify namespaces are cleared
+	req = httptest.NewRequest(http.MethodPost, "/graphql/test1", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	
+	handler.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }

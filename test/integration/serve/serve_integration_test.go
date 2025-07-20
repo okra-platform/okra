@@ -289,7 +289,6 @@ func testServiceCallWithEndpoint(t *testing.T, endpoint string) {
 	})
 	
 	t.Run("GraphQL", func(t *testing.T) {
-		t.Skip("GraphQL integration test temporarily disabled - schema validation issues need investigation")
 		testGraphQLCall(t)
 	})
 }
