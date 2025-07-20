@@ -24,16 +24,16 @@ The approach is inspired by Prisma but leverages Atlas's mature migration engine
 
 1. **Intuitive Schema Definition**: Use familiar GraphQL syntax with extensions for database modeling
 2. **Type-Safe Models**: Generate model definitions from schema for each service's language (Go structs, TypeScript interfaces, Python dataclasses, etc.)
-3. **Seamless DX**: Hide implementation complexity (Atlas HCL) while providing powerful migration capabilities
+3. **Seamless DX**: Users only interact with OKRA CLI and models.okra.gql files
 4. **OKRA Integration**: Natural fit with existing OKRA tooling and conventions
-5. **Multi-Database Support**: PostgreSQL, MySQL, SQLite through Atlas abstraction
+5. **Multi-Database Support**: PostgreSQL, MySQL, SQLite through Atlas library
 6. **Schema-Driven Workflow**: Always generate migrations from schema changes, never write SQL manually
 
 ## Non-Goals
 
 1. **ORM Functionality**: This is purely for schema definition and migrations
-2. **Query Building**: Handled separately by the SQL Host API
-3. **Direct Atlas Exposure**: Users should not need to know about Atlas or HCL
+2. **Query Building**: Services handle their own database queries
+3. **Direct Atlas Exposure**: Users should not need to install Atlas CLI or understand HCL
 
 ## Design
 
@@ -124,57 +124,39 @@ model Profile {
            │ Parse (reuse service IDL parser approach)
            ▼
 ┌─────────────────────┐
-│   Go Structs AST    │  ← Internal representation
+│   Schema AST        │  ← Internal representation
 │  (SchemaDefinition) │
 └──────────┬──────────┘
            │
-           │ Generate
+           │ Convert to Atlas schema objects
            ▼
 ┌─────────────────────┐
-│   Atlas HCL File    │  ← Hidden in temp directory
-│    (temp/*.hcl)     │
+│  Atlas Schema API   │  ← In-memory Atlas schemas
+│  (schema.Schema)    │     No HCL files created
 └──────────┬──────────┘
            │
-           │ Atlas CLI
-           ├─────────────────────────┐
-           │                         │
-           ▼                         ▼
-┌─────────────────────┐   ┌─────────────────────┐
-│  Declarative Mode   │   │   Versioned Mode    │
-│                     │   │                     │
-│  Direct DB Apply    │   │ Generate SQL Files  │
-│  (no files)         │   │ (migrations/*.sql)  │
-└─────────────────────┘   └─────────────────────┘
+           │ Atlas library generates SQL
+           ▼
+┌─────────────────────┐
+│   SQL Migrations    │  ← Applied to database
+│                     │     SQL files optional
+└─────────────────────┘
 ```
 
-### Configuration Mode Detection
+The system uses Atlas as a Go library to handle schema diffing and SQL generation. All Atlas operations happen in-memory - no HCL files are written to disk. Users only see and interact with their `models.okra.gql` file and the OKRA CLI.
 
-The system automatically detects the configuration mode:
+### Configuration
+
+The system uses a simplified configuration approach:
 
 ```go
 // internal/migrations/config.go
 type DatabaseConfig struct {
-    // Simple mode: single provider
-    Provider string
-    URL      string
-    
-    // Multi-environment mode
-    Environments map[string]EnvironmentConfig
-}
-
-func (c *DatabaseConfig) IsMultiEnvironment() bool {
-    return len(c.Environments) > 0
-}
-
-func (c *DatabaseConfig) GetProviders() []string {
-    if c.IsMultiEnvironment() {
-        providers := make(map[string]bool)
-        for _, env := range c.Environments {
-            providers[env.Provider] = true
-        }
-        return maps.Keys(providers)
-    }
-    return []string{c.Provider}
+    Provider    string
+    URL         string
+    GenerateSQL bool   // false = development mode (no SQL files)
+                      // true = enterprise mode (SQL files for review)
+    Table       string // defaults to "_okra_migrations"
 }
 ```
 
@@ -189,6 +171,19 @@ package models
 import (
     "github.com/okra-io/okra/internal/schema"
 )
+
+// Public interface following OKRA conventions
+type SchemaParser interface {
+    ParseModelsFile(path string) (*SchemaDefinition, error)
+}
+
+// Public constructor
+func NewSchemaParser() SchemaParser {
+    return &schemaParser{}
+}
+
+// Private implementation
+type schemaParser struct{}
 
 type SchemaDefinition struct {
     Namespace string
@@ -224,7 +219,7 @@ type Relation struct {
     OnDelete   string // CASCADE, SET_NULL, etc.
 }
 
-func ParseModelsFile(path string) (*SchemaDefinition, error) {
+func (p *schemaParser) ParseModelsFile(path string) (*SchemaDefinition, error) {
     // 1. Preprocess to handle @okra and model keywords
     // 2. Parse with graphql-go-tools
     // 3. Extract models, fields, relations
@@ -245,11 +240,22 @@ import (
     "github.com/okra-io/okra/internal/schema/models"
 )
 
-type SchemaConverter struct {
+// Public interface
+type SchemaConverter interface {
+    ToAtlasSchema(okraSchema *models.SchemaDefinition) (*schema.Schema, error)
+}
+
+// Public constructor
+func NewSchemaConverter(dialect string) SchemaConverter {
+    return &schemaConverter{dialect: dialect}
+}
+
+// Private implementation
+type schemaConverter struct {
     dialect string // postgres, mysql, sqlite
 }
 
-func (c *SchemaConverter) ToAtlasSchema(okraSchema *models.SchemaDefinition) (*schema.Schema, error) {
+func (c *schemaConverter) ToAtlasSchema(okraSchema *models.SchemaDefinition) (*schema.Schema, error) {
     s := &schema.Schema{
         Name: okraSchema.Namespace,
     }
@@ -275,25 +281,49 @@ func (c *SchemaConverter) ToAtlasSchema(okraSchema *models.SchemaDefinition) (*s
 }
 
 // internal/migrations/state.go
-type SchemaStateManager struct {
+
+// Public interface
+type SchemaStateManager interface {
+    GetCurrentSchema() (*models.SchemaDefinition, error)
+    SaveMigrationWithSchema(migration string, schema *models.SchemaDefinition, timestamp string, generateSQL bool) error
+    GetSchemaForMigration(version string) (*models.SchemaDefinition, error)
+    Close() error
+}
+
+// Public constructor
+func NewSchemaStateManager(migrationsDir string) SchemaStateManager {
+    return &schemaStateManager{
+        migrationsDir: migrationsDir,
+    }
+}
+
+// Private implementation
+type schemaStateManager struct {
     migrationsDir string
 }
 
-func (m *SchemaStateManager) GetCurrentSchema() (*models.SchemaDefinition, error) {
+func (m *schemaStateManager) GetCurrentSchema() (*models.SchemaDefinition, error) {
     // Read from migrations/current/schema.json
 }
 
-func (m *SchemaStateManager) SaveMigrationWithSchema(
+func (m *schemaStateManager) SaveMigrationWithSchema(
     migration string, 
     schema *models.SchemaDefinition,
     timestamp string,
+    generateSQL bool,
 ) error {
-    // Save to migrations/{timestamp}/
+    // Always save to migrations/{timestamp}/schema.json
+    // Optionally save SQL to migrations/{timestamp}/migration.sql if generateSQL is true
     // Update migrations/current/schema.json
 }
 
-func (m *SchemaStateManager) GetSchemaForMigration(version string) (*models.SchemaDefinition, error) {
+func (m *schemaStateManager) GetSchemaForMigration(version string) (*models.SchemaDefinition, error) {
     // Read from migrations/{version}/schema.json
+}
+
+func (m *schemaStateManager) Close() error {
+    // Cleanup resources if any
+    return nil
 }
 ```
 
@@ -302,27 +332,21 @@ func (m *SchemaStateManager) GetSchemaForMigration(version string) (*models.Sche
 New commands under `okra db:*`:
 
 ```bash
-# Declarative Mode Commands
-# ========================
-
-# Sync database with current schema (no migration files)
+# Development Commands
+# ===================
+# Sync database to match models.okra.gql (no migration files)
 okra db:sync
 
-# Preview changes without applying (dry-run)
-okra db:sync --dry-run
+# Watch mode - auto-sync on schema changes (used by okra dev)
+okra db:sync --watch
 
-# Force sync (destructive changes allowed)
-okra db:sync --force
+# Reset database to match schema
+okra db:reset
 
-
-# Versioned Mode Commands
-# =======================
-
-# Initialize migrations (create migrations directory)
-okra db:init
-
-# Generate migration from schema changes
-okra db:migrate:generate
+# Migration Commands
+# ==================
+# Create migration from all changes since last snapshot
+okra db:migrate:snapshot
 
 # Apply pending migrations
 okra db:migrate:up
@@ -333,204 +357,184 @@ okra db:migrate:down
 # Show migration status
 okra db:migrate:status
 
+# Utility Commands
+# ================
+# Preview changes since last snapshot
+okra db:diff
 
-# Common Commands (Both Modes)
-# ============================
+# Initialize migrations directory
+okra db:init
 
-# Reset database (drop all, re-create from schema)
-okra db:reset
+# Validate schema syntax
+okra db:validate
 
 # Seed database from seed files
 okra db:seed
-
-# Validate schema across all configured databases
-okra db:validate
 ```
+
+### Development Workflow
+
+The new workflow separates rapid development from migration generation:
+
+1. **Development Phase**: Use `okra db:sync` or auto-sync during `okra dev`
+2. **Commit Phase**: Use `okra db:migrate:snapshot` to create a clean migration
 
 ### Schema State Tracking
 
-A critical aspect of schema-driven migrations is tracking the schema state to enable proper diffing. Atlas needs to know both the current state and the desired state to generate accurate migrations.
-
-#### Versioned Mode State Tracking
-
-For versioned migrations, we store schema snapshots alongside each migration:
+The system tracks three key schema states for accurate migration generation:
 
 ```
 migrations/
-├── 20240120_143022_initial/
-│   ├── migration.sql         # The actual SQL migration
-│   └── schema.json          # Snapshot of models.okra.gql at this point
-├── 20240121_091545_add_users/
-│   ├── migration.sql
-│   └── schema.json
-└── current/
-    └── schema.json          # Current schema state (latest applied)
+├── snapshot/
+│   └── schema.json          # Last snapshot state (for migration diffing)
+├── current/
+│   └── schema.json          # Current synced state (what's in the database)
+├── 20240120_143022/
+│   ├── schema.json          # Schema at time of migration
+│   └── migration.sql        # Optional: only if generateSQL is true
+└── 20240121_091545/
+    ├── schema.json
+    └── migration.sql
 ```
 
-**Migration Generation Process:**
-1. Parse current `models.okra.gql` → new schema state
-2. Read `migrations/current/schema.json` → previous schema state
-3. Generate HCL for both states
-4. Use Atlas to diff HCL files → SQL migration
-5. Store new migration with its schema snapshot
-6. Update `current/schema.json` after successful apply
+**Development Sync Process (`okra db:sync`):**
+1. Parse `models.okra.gql` → desired schema state
+2. Apply changes directly to development database
+3. Update `migrations/current/schema.json` with new state
+4. No migration files created
 
-#### Declarative Mode State Tracking
+**Migration Snapshot Process (`okra db:migrate:snapshot`):**
+1. Check if `models.okra.gql` matches `migrations/current/schema.json`
+2. If not, prompt user to sync first or proceed with untested changes
+3. Compare `migrations/snapshot/schema.json` → `migrations/current/schema.json`
+4. Generate migration for the net changes
+5. Create `migrations/{timestamp}/` with schema and optional SQL
+6. Update `migrations/snapshot/schema.json` to current state
 
-For declarative mode, we have two approaches:
-
-**Approach 1: Database Introspection (Default)**
-- Atlas introspects current database state directly
-- No schema snapshots needed
-- Works well for simple schemas
-- May miss some metadata not reflected in DB
-
-**Approach 2: Shadow Schema Tracking**
-- Store schema snapshots in `.okra/schema/` directory
-- Track applied schema versions in a `_okra_schema_history` table
-- More accurate for complex schemas with metadata
-
-```sql
--- _okra_schema_history table
-CREATE TABLE _okra_schema_history (
-    version VARCHAR(255) PRIMARY KEY,
-    schema_hash VARCHAR(64) NOT NULL,
-    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    schema_snapshot TEXT NOT NULL
-);
-```
+This approach ensures:
+- Fast local iteration without migration clutter
+- Clean migration history (one per feature, not per experiment)
+- Safety checks prevent untested migrations
+- Always know what was last "committed" via snapshot
 
 ### Migration Workflow
 
-The workflow adapts based on migration mode:
+The new workflow separates rapid development from migration generation:
 
-#### Declarative Mode (Runtime Generation)
-
-Similar to Prisma's `db push`, ideal for rapid development:
+#### Development Phase
 
 ```bash
-# Sync database with schema (no migration files)
+# Option 1: Auto-sync during development
+okra dev
+# Automatically syncs database on schema changes
+
+# Option 2: Manual sync
 okra db:sync
-
-# What happens internally:
-# 1. Parse models.okra.gql
-# 2. Generate Atlas HCL in temp directory  
-# 3. Atlas compares HCL with current database state
-# 4. Generate and apply migration plan directly
-# 5. No migration files created
+# Manually sync database to match models.okra.gql
 ```
 
-**Benefits:**
-- ✅ Zero friction development
-- ✅ Always in sync with schema
-- ✅ No migration conflicts
-- ✅ Perfect for prototyping
+**What happens during sync:**
+1. Parse `models.okra.gql`
+2. Apply changes directly to development database
+3. Update `migrations/current/schema.json`
+4. No migration files created
 
-**Trade-offs:**
-- ❌ No migration history
-- ❌ Can't review changes before applying
-- ❌ Not suitable for production
-
-#### Versioned Mode (Explicit Migrations)
-
-Schema-driven migration approach with explicit files, ideal for production:
+#### Commit Phase
 
 ```bash
-# Generate migrations from schema changes
-okra db:migrate:generate
+# Create a migration snapshot when ready to commit
+okra db:migrate:snapshot
 
 # What happens internally:
-# 1. Parse models.okra.gql → new schema state
-# 2. Load migrations/current/schema.json → previous state
-# 3. Generate Atlas HCL for both states
-# 4. Atlas diffs HCL files → SQL migration
-# 5. Save migration + schema snapshot
-
-# Apply migrations
-okra db:migrate:up
-
-# Rollback
-okra db:migrate:down
+# 1. Verify models.okra.gql matches current/schema.json
+# 2. If not, prompt to sync first (recommended) or proceed
+# 3. Compare snapshot/schema.json → current/schema.json
+# 4. Generate migration for net changes (not intermediate states)
+# 5. Create migrations/{timestamp}/ with schema.json
+# 6. Optionally create migration.sql (based on generateSQL config)
+# 7. Update snapshot/schema.json
 ```
 
-**Benefits:**
-- ✅ Full migration history with schema snapshots
-- ✅ Code review for database changes
-- ✅ Explicit rollback support
-- ✅ Team collaboration friendly
-- ✅ Accurate diffing based on schema, not DB state
+**Safety Check Example:**
+```
+⚠️  Schema mismatch detected!
 
-**Trade-offs:**
-- ❌ More steps in development
-- ❌ Requires schema snapshot management
-- ❌ Larger repository size (includes JSON snapshots)
+Your models.okra.gql has changes that haven't been synced:
+  + Added field 'phoneNumber' to User
+  ~ Changed field 'email' from optional to required
 
-#### Hybrid Workflow
+What would you like to do?
+  1. Sync database first, then create snapshot (recommended)
+  2. Create snapshot from models.okra.gql anyway (untested changes)
+  3. Cancel and sync manually
 
-Use different modes for different environments:
-
-```bash
-# Local development (declarative)
-OKRA_ENV=local okra db:sync  # Fast, no files
-
-# Before committing (switch to versioned)
-OKRA_ENV=development okra db:migrate:generate
-
-# CI/Production (versioned)
-OKRA_ENV=production okra db:migrate:up
+Choice [1]: _
 ```
 
-### Mode Comparison
+This workflow ensures:
+- Fast, friction-free local development
+- Clean migration history
+- Safety against untested changes
+- Flexibility when needed
 
-| Feature | Declarative | Versioned |
-|---------|-------------|-----------|
+### Workflow Comparison
+
+| Feature | Development (db:sync) | Production (db:migrate:snapshot) |
+|---------|----------------------|----------------------------------|
 | Migration files | No | Yes |
-| Development speed | Very fast | Moderate |
-| Production ready | No | Yes |
-| Team collaboration | Limited | Excellent |
-| Rollback support | No | Yes |
-| Code review | No | Yes |
-| Conflict resolution | Automatic | Manual |
-| Best for | Prototyping, Solo dev | Production, Teams |
+| Schema tracking | current/schema.json only | Full history with snapshots |
+| Database changes | Immediate | Through migrations |
+| Intermediate states | Not recorded | Collapsed into one migration |
+| Safety checks | None | Prompts if schema unsynced |
+| Best for | Local experimentation | Committing features |
 
-### Transitioning Between Modes
-
-OKRA makes it easy to transition from declarative to versioned mode as your project matures:
+### Example Development Flow
 
 ```bash
-# Start with declarative mode during prototyping
-okra db:sync  # Quick iterations
+# Start developing with auto-sync
+okra dev
+# [OKRA] Auto-sync enabled, watching models.okra.gql
 
-# When ready to stabilize, generate initial migration
-okra db:migrate:init-from-schema
+# Edit schema - add field
+# [OKRA] Schema changed, syncing database...
+# [OKRA] ✓ Database synced
 
-# This creates:
-# migrations/
-# ├── 20240120_143022_initial/
-# │   ├── migration.sql    # Full schema as SQL
-# │   └── schema.json      # Current models.okra.gql snapshot
-# └── current/
-#     └── schema.json      # Same as above, for next diff
+# Edit schema - rename field  
+# [OKRA] Schema changed, syncing database...
+# [OKRA] ✓ Database synced
 
-# Continue with versioned migrations
-okra db:migrate:generate  # Will diff against current/schema.json
+# Happy with changes? Check what changed
+okra db:diff
+# Changes since last snapshot:
+#   + Added field 'phoneNumber' to User
+#   - Removed field 'oldField' from User
+
+# Create snapshot for commit
+okra db:migrate:snapshot
+# ✓ Schema is synced, creating snapshot...
+# Generated migrations/20240120_143022/
+#   Added field 'phoneNumber' to User
+#   Removed field 'oldField' from User
+
+# Commit and push
+git add migrations/ models.okra.gql
+git commit -m "Add phone number to users"
 ```
 
-The transition command captures both the current database state (as SQL) and the current schema definition (as JSON), providing a clean starting point for versioned migrations.
-
-**Transition Guidelines:**
-- Start with declarative for new projects
-- Switch to versioned before first deployment
-- Use versioned for any multi-developer project
-- Consider hybrid approach for different environments
+**Configuration for SQL Generation:**
+```json
+{
+  "database": {
+    "migrations": {
+      "generateSQL": true  // Enable to generate SQL files in migrations
+    }
+  }
+}
+```
 
 ### Configuration
 
-OKRA supports flexible database configurations to match different development workflows:
-
-#### Option 1: Declarative Mode (Runtime Generation)
-
-Best for early development, prototyping, and solo projects:
+OKRA uses a streamlined configuration approach:
 
 ```json
 {
@@ -538,29 +542,13 @@ Best for early development, prototyping, and solo projects:
     "provider": "postgres",
     "url": "${DATABASE_URL}",
     "migrations": {
-      "mode": "declarative",  // No migration files, runtime generation
-      "table": "_okra_migrations"
-    },
-    "schemas": [
-      "./models.okra.gql"
-    ]
-  }
-}
-```
-
-#### Option 2: Versioned Mode (Explicit Migrations)
-
-Best for production systems and team collaboration:
-
-```json
-{
-  "database": {
-    "provider": "postgres",
-    "url": "${DATABASE_URL}",
-    "migrations": {
-      "mode": "versioned",  // Explicit migration files
+      "generateSQL": false,  // false = no SQL files, true = generate SQL files
+      "table": "_okra_migrations",
       "dir": "./migrations",
-      "table": "_okra_migrations"
+      "development": {
+        "autoSync": true,        // Enable auto-sync during okra dev
+        "syncDebounce": 500      // ms to wait after schema changes
+      }
     },
     "schemas": [
       "./models.okra.gql"
@@ -569,9 +557,9 @@ Best for production systems and team collaboration:
 }
 ```
 
-#### Option 3: Multi-Environment with Mode Selection
+#### Multi-Environment Configuration
 
-Combines environment flexibility with migration mode choice:
+For projects needing different settings per environment:
 
 ```json
 {
@@ -580,36 +568,22 @@ Combines environment flexibility with migration mode choice:
       "local": {
         "provider": "sqlite",
         "url": "sqlite://local.db",
-        "migrations": {
-          "mode": "declarative"  // Fast iteration, no files
-        }
+        "generateSQL": false  // Development mode
       },
       "test": {
         "provider": "sqlite", 
         "url": "sqlite://:memory:",
-        "migrations": {
-          "mode": "declarative"
-        }
-      },
-      "development": {
-        "provider": "postgres",
-        "url": "${DATABASE_URL}",
-        "migrations": {
-          "mode": "versioned",
-          "dir": "./migrations/postgres"
-        }
+        "generateSQL": false
       },
       "production": {
         "provider": "postgres",
         "url": "${DATABASE_URL}",
-        "migrations": {
-          "mode": "versioned",  // Always explicit in production
-          "dir": "./migrations/postgres"
-        }
+        "generateSQL": true  // Enterprise mode for production
       }
     },
     "migrations": {
-      "table": "_okra_migrations"
+      "table": "_okra_migrations",
+      "dir": "./migrations"
     },
     "schemas": [
       "./models.okra.gql"
@@ -624,32 +598,25 @@ When using multi-environment configuration:
 
 1. **Migration Generation**:
    ```bash
-   # Generates migrations for all configured providers
-   okra db:migrate:generate
+   # Generates migrations based on current environment
+   OKRA_ENV=production okra db:migrate:generate
    
    # Creates (with timestamp):
    # migrations/
-   # ├── postgres/
-   # │   ├── 20240120_143022/
-   # │   │   ├── migration.sql
-   # │   │   └── schema.json
-   # │   └── current/
-   # │       └── schema.json
-   # └── sqlite/
-   #     ├── 20240120_143022/
-   #     │   ├── migration.sql
-   #     │   └── schema.json
-   #     └── current/
-   #         └── schema.json
+   # ├── 20240120_143022/
+   # │   ├── schema.json      # Always generated
+   # │   └── migration.sql    # Only if generateSQL: true
+   # └── current/
+   #     └── schema.json      # Current state
    ```
    
-   Each provider maintains its own schema history to handle provider-specific differences.
+   All environments use the same migration structure for consistency.
 
 2. **Migration Application**:
    ```bash
-   # Uses environment to determine which migrations to run
-   OKRA_ENV=local okra db:migrate:up    # Uses SQLite migrations
-   OKRA_ENV=production okra db:migrate:up # Uses PostgreSQL migrations
+   # Uses environment to determine database and settings
+   OKRA_ENV=local okra db:migrate:up       # SQLite, no SQL files
+   OKRA_ENV=production okra db:migrate:up  # PostgreSQL, with SQL files
    
    # During development
    okra dev  # Automatically uses 'local' environment
@@ -657,8 +624,8 @@ When using multi-environment configuration:
 
 3. **Testing Strategy**:
    - Unit tests: Use SQLite in-memory (`:memory:`) for speed
-   - Integration tests: Optionally use PostgreSQL for accuracy
-   - CI/CD: Can use either based on pipeline requirements
+   - Integration tests: Match production database type
+   - CI/CD: Use enterprise mode for SQL validation
 
 ### Multi-Database Support
 
@@ -871,78 +838,87 @@ Configuration in `okra.config.json`:
 
 ## Atlas Integration Details
 
-### Library vs CLI Decision
+### Why Atlas?
 
-OKRA embeds Atlas as a Go library rather than shelling out to the CLI for several reasons:
+OKRA uses Atlas as a Go library to provide robust, battle-tested migration capabilities. This is an implementation detail that users don't need to know about - they only interact with OKRA CLI and their `models.okra.gql` files.
 
-1. **Runtime Migration Support**: Enables future auto-migration during service deployment
-2. **Better Error Handling**: Direct access to Atlas errors and types
-3. **Performance**: No process overhead for each operation
-4. **Deployment Simplicity**: No need to bundle Atlas CLI with OKRA
-5. **API Stability**: Library API more stable than CLI interface
-6. **Custom Integration**: Can extend Atlas behavior if needed
+### Library Integration Benefits
+
+1. **No External Dependencies**: Users don't need to install Atlas CLI
+2. **In-Memory Operations**: All schema conversion happens in memory, no temporary files
+3. **Better Error Handling**: Direct access to Atlas errors and types
+4. **Performance**: No process overhead for operations
+5. **Future Flexibility**: Enables auto-migration capabilities
 
 ### Schema Diffing Process
 
-OKRA uses Atlas's Go API for schema operations:
+The migration engine uses Atlas's Go API directly:
 
 ```go
-// internal/migrations/atlas.go
+// internal/migrations/engine.go
 import (
     "ariga.io/atlas/sql/schema"
-    "ariga.io/atlas/sql/sqlite"
-    "ariga.io/atlas/sql/postgres" 
-    "ariga.io/atlas/sql/mysql"
     "ariga.io/atlas/sql/migrate"
 )
 
-type MigrationEngine struct {
+// Public interface
+type MigrationEngine interface {
+    GenerateMigration(current, desired *models.SchemaDefinition) (string, error)
+    ApplyMigration(ctx context.Context, sql string) error
+    Shutdown() error
+}
+
+// Public constructor
+func NewMigrationEngine(driver migrate.Driver, devConn schema.ExecQuerier) MigrationEngine {
+    return &migrationEngine{
+        driver:  driver,
+        devConn: devConn,
+    }
+}
+
+// Private implementation
+type migrationEngine struct {
     driver  migrate.Driver
     devConn schema.ExecQuerier
 }
 
-func (e *MigrationEngine) GenerateMigration(current, desired *models.SchemaDefinition) (*migrate.Plan, error) {
-    // 1. Convert OKRA schemas to Atlas schemas
-    currentSchema := e.toAtlasSchema(current)
-    desiredSchema := e.toAtlasSchema(desired)
+func (e *migrationEngine) GenerateMigration(current, desired *models.SchemaDefinition) (string, error) {
+    // 1. Convert OKRA schemas to Atlas schemas (in-memory)
+    converter := NewSchemaConverter(e.driver.Dialect())
+    currentSchema := converter.ToAtlasSchema(current)
+    desiredSchema := converter.ToAtlasSchema(desired)
     
-    // 2. Create change set
+    // 2. Use Atlas to diff schemas
     changes, err := e.driver.SchemaDiff(currentSchema, desiredSchema)
     if err != nil {
-        return nil, err
+        return "", err
     }
     
-    // 3. Plan migration with dev database validation
-    plan, err := e.driver.PlanChanges(context.Background(), "migration", changes, 
-        migrate.WithDevConnection(e.devConn))
-    if err != nil {
-        return nil, err
-    }
-    
-    return plan, nil
-}
-
-func (e *MigrationEngine) toAtlasSchema(def *models.SchemaDefinition) *schema.Schema {
-    // Convert OKRA schema to Atlas schema representation
-    // This replaces HCL generation entirely
-    converter := &SchemaConverter{dialect: e.driver.Dialect()}
-    return converter.ToAtlasSchema(def)
+    // 3. Generate SQL directly (no HCL involved)
+    return e.driver.GenerateSQL(changes)
 }
 ```
 
+This approach:
+- Converts OKRA schema → Atlas schema objects directly
+- Never generates HCL files
+- Produces pure SQL output
+- All operations happen in memory
+
 ### Development Database Management
 
-Atlas requires a "dev database" for validating migrations. OKRA manages this programmatically:
+The migration engine uses a development database for validation. This is managed transparently:
 
 ```go
+// internal/migrations/devdb.go
 func NewDevConnection(provider string) (schema.ExecQuerier, error) {
     switch provider {
     case "sqlite":
-        // In-memory SQLite for development
+        // In-memory SQLite for fast validation
         return sql.Open("sqlite3", ":memory:")
     
     case "postgres":
-        // Use testcontainers or dedicated dev instance
+        // Use local instance or testcontainers
         return postgres.Open(getDevPostgresURL())
         
     case "mysql":
@@ -951,41 +927,27 @@ func NewDevConnection(provider string) (schema.ExecQuerier, error) {
 }
 ```
 
-This ensures migrations are validated against a real database engine without external dependencies.
+Users never interact with this - it's purely an internal validation mechanism.
 
 ### Runtime Migration Execution
 
-The library integration enables future auto-migration support during service deployment:
+The system supports both explicit and future auto-migration capabilities:
 
 ```go
-func (e *MigrationEngine) ApplyMigrations(ctx context.Context, target *sql.DB) error {
-    // Read current schema state from database
-    current, err := e.getCurrentSchemaVersion(target)
-    if err != nil {
-        return err
-    }
-    
-    // Get desired schema from models.okra.gql
-    desired, err := models.ParseModelsFile("models.okra.gql")
-    if err != nil {
-        return err
-    }
-    
-    // Generate and apply migration if needed
-    plan, err := e.GenerateMigration(current, desired)
-    if err != nil {
-        return err
-    }
-    
-    if len(plan.Changes) > 0 {
-        return e.driver.ApplyChanges(ctx, target, plan.Changes)
-    }
-    
-    return nil
+func (e *migrationEngine) ApplyMigration(ctx context.Context, sql string) error {
+    // Apply the generated SQL to the target database
+    return e.driver.ApplySQL(ctx, sql)
+}
+
+// Future enhancement: auto-migration on service startup
+func (e *migrationEngine) AutoMigrate(ctx context.Context) error {
+    // This would enable Prisma-like auto-migration
+    // Currently migrations are always explicit via CLI
+    return fmt.Errorf("auto-migration not yet implemented")
 }
 ```
 
-This enables OKRA services to optionally auto-migrate their databases on startup, similar to Prisma's approach but with more control.
+The current design focuses on explicit migrations via CLI commands, maintaining full control over when database changes are applied.
 
 ## Implementation Plan
 
@@ -1094,8 +1056,8 @@ When using declarative mode, additional safety measures are implemented:
 
 ## Dependencies
 
-### Required Go Libraries
-- `ariga.io/atlas` - Core migration engine (as library, not CLI)
+### Core Go Libraries
+- `ariga.io/atlas` - Migration engine (used as library, not CLI)
 - `ariga.io/atlas/sql/schema` - Schema representation
 - `ariga.io/atlas/sql/migrate` - Migration planning and execution
 - `ariga.io/atlas/sql/sqlite` - SQLite driver
@@ -1113,45 +1075,45 @@ When using declarative mode, additional safety measures are implemented:
 
 ## Design Decisions
 
-1. **Migration Storage**: Flexible based on mode:
-   - **Declarative Mode**: No migration files, optional schema snapshots in `_okra_schema_history` table
-   - **Versioned Mode**: 
-     - Migration SQL files in `migrations/{timestamp}/migration.sql`
-     - Schema snapshots in `migrations/{timestamp}/schema.json`
-     - Current state in `migrations/current/schema.json`
-   - Parsed schema as `models.okra.json` always included in `.okra.pkg` bundle
+1. **Two-Phase Development Workflow**:
+   - **Development Phase**: `okra db:sync` for rapid iteration without migrations
+   - **Commit Phase**: `okra db:migrate:snapshot` for clean, production-ready migrations
+   - **Benefits**: Fast experimentation, clean history, one migration per feature
 
-2. **Schema State Tracking**: Essential for accurate diffing:
-   - **Why**: Atlas needs both current and desired states for proper diff generation
-   - **Versioned Mode**: Store schema.json with each migration for history
-   - **Declarative Mode**: Use DB introspection or optional shadow tracking
-   - **Benefits**: Accurate diffs, migration history, easier debugging
+2. **Three-State Schema Tracking**:
+   - **snapshot/**: Last committed schema state
+   - **current/**: Current synced database state  
+   - **{timestamp}/**: Individual migration states
+   - **Benefits**: Accurate diffing, safety checks, clear state management
 
-3. **Schema-Driven Workflow**: No manual migration creation:
+3. **Atlas as Implementation Detail**: 
+   - Users only interact with OKRA CLI and `models.okra.gql`
+   - Atlas library provides robust migration engine
+   - All operations happen in-memory (no HCL files)
+   - No external Atlas CLI dependency
+
+4. **Schema-Driven Workflow**: No manual SQL writing:
    - **Single Source of Truth**: models.okra.gql defines the desired state
-   - **Automatic Generation**: okra db:migrate:generate handles all SQL creation
-   - **No Migration Naming**: Timestamps provide unique, sortable identifiers
+   - **Automatic Sync**: `okra dev` watches and syncs automatically
+   - **Clean Snapshots**: Collapse all experiments into one migration
    - **Conflict Resolution**: Happens at schema level, not SQL level
 
-4. **Service Data Isolation**: Services operate only on their own data:
-   - No cross-service model sharing
-   - Services requiring data from other services use service-to-service communication
-   - Maintains clear service boundaries and ownership
+5. **Safety First Design**:
+   - **Sync Verification**: Snapshot command checks if schema is tested
+   - **User Prompts**: Clear choices when schema is out of sync
+   - **Escape Hatches**: Can proceed with untested changes if needed
+   - **Diff Command**: Preview changes before creating snapshots
 
-5. **Runtime Schema Access**: Not implemented in initial version
-   - Services don't need runtime access to schema definitions
-   - Can be added later if use cases emerge
+6. **Configuration Simplicity**:
+   - `generateSQL`: Control SQL file generation
+   - `autoSync`: Enable/disable auto-sync during development
+   - Same core workflow regardless of settings
 
-6. **Backward Compatibility**: Leverages Atlas capabilities with OKRA enhancements:
-   - **Atlas Features**:
-     - Schema diffing and validation
-     - Dry-run mode to preview changes
-     - Reversible migration detection
-   - **OKRA Additions**:
-     - Migration testing framework: `okra db:migrate:test`
-     - Rollback simulation: `okra db:migrate:dry-run`
-     - Schema compatibility checker for breaking changes
-     - Development mode for iterative testing
+7. **Future Enhancements**: Design enables future capabilities:
+   - Custom SQL migrations alongside generated ones
+   - Migration testing and validation framework
+   - Cross-database compatibility checking
+   - Advanced merge strategies for team collaboration
 
 ## Schema-Driven Edge Cases
 

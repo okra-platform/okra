@@ -33,6 +33,8 @@ Evaluate the design against these principles:
 
 ### 3. Technical Validation
 
+**IMPORTANT**: Think deeply about and pay special attention to parts of the design that might be contradictory or create mismatched or unclear requirements during implementation and call those out as well.
+
 #### API Design
 - Function signatures make sense (parameters, return types)
 - Error handling is consistent and follows Go conventions

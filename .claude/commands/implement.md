@@ -24,6 +24,8 @@ When implementing a feature:
    - Read any existing code relevant to the feature implementation
    - Only after understanding the system context and design, proceed with the following steps
 
+1a. Think deeply about the overall implementation plan, and how to build using a phased approach. We want to implement the features in an incremental phased way, with each phase being checked for accuracey, test coverage and all test passing before moving to the next. Be sure to follow the testing approach and best practices outlined in the docs for the repo.
+
 2. Present your implementation plan to the user:
    ```
    I'll be implementing: [feature-name]

@@ -18,10 +18,10 @@ OKRA migrations are **always schema-driven**. You modify your `models.okra.gql` 
 ```bash
 # 1. Update your schema in models.okra.gql
 # 2. Run: okra db:migrate:generate
-# Done! Atlas figures out the SQL for you
+# Done! OKRA generates the SQL for you
 ```
 
-Behind the scenes, OKRA tracks your schema history to generate accurate diffs - but you never need to manage this manually.
+Behind the scenes, OKRA tracks your schema history to generate accurate diffs - but you never need to manage this manually. The system is powered by a robust migration engine that handles all the complexity.
 
 ## Quick Start
 
@@ -55,65 +55,43 @@ model Post {
 }
 ```
 
-### 2. Choose Your Workflow
+### 2. Understand the Two-Phase Workflow
 
-OKRA supports three migration workflows to match your development style:
+OKRA separates rapid development from migration generation:
 
-#### Declarative Mode (Fastest for Development)
-
-Perfect for prototyping and early development:
+#### Phase 1: Development (Rapid Iteration)
 
 ```bash
-# Sync your database with the schema - no migration files!
+# Option 1: Auto-sync with okra dev
+okra dev
+# Automatically syncs database as you edit models.okra.gql
+
+# Option 2: Manual sync
 okra db:sync
-
-# Preview changes before applying
-okra db:sync --dry-run
+# Manually sync database to match your schema
 ```
 
-#### Versioned Mode (Production Ready)
+During development:
+- Edit `models.okra.gql` freely
+- Database updates immediately
+- No migration files created
+- Experiment without commitment
 
-Schema-driven migration files for production systems:
+#### Phase 2: Commit (Create Migration)
 
 ```bash
-# 1. Edit models.okra.gql (your single source of truth)
-# 2. Generate migrations automatically
-okra db:migrate:generate
+# Check what changed since last snapshot
+okra db:diff
 
-# Apply migrations
+# Create a migration snapshot
+okra db:migrate:snapshot
+# Generates one clean migration from all your changes
+
+# Apply migrations in production
 okra db:migrate:up
-
-# Check status
-okra db:migrate:status
 ```
 
-The key benefit: You only maintain the schema, not the migrations!
-
-#### Hybrid Mode (Best of Both Worlds)
-
-Use declarative locally, versioned in production:
-
-```json
-{
-  "database": {
-    "environments": {
-      "local": {
-        "provider": "sqlite",
-        "url": "sqlite://local.db",
-        "migrations": { "mode": "declarative" }
-      },
-      "production": {
-        "provider": "postgres",
-        "url": "${DATABASE_URL}",
-        "migrations": { 
-          "mode": "versioned",
-          "dir": "./migrations"
-        }
-      }
-    }
-  }
-}
-```
+The key benefit: Experiment freely, commit clean migrations!
 
 ## Schema Definition
 
@@ -219,8 +197,12 @@ For single database setups:
     "provider": "postgres",
     "url": "${DATABASE_URL}",
     "migrations": {
-      "mode": "versioned",
-      "dir": "./migrations"
+      "generateSQL": false,  // true = generate SQL files for review
+      "dir": "./migrations",
+      "development": {
+        "autoSync": true,    // Auto-sync during okra dev
+        "syncDebounce": 500  // Wait 500ms after changes
+      }
     },
     "schemas": ["./models.okra.gql"]
   }
@@ -229,7 +211,7 @@ For single database setups:
 
 ### Multi-Environment Configuration
 
-For different databases per environment:
+For different settings per environment:
 
 ```json
 {
@@ -238,25 +220,24 @@ For different databases per environment:
       "local": {
         "provider": "sqlite",
         "url": "sqlite://local.db",
-        "migrations": {
-          "mode": "declarative"
-        }
+        "generateSQL": false,
+        "autoSync": true      // Enable for development
       },
       "test": {
         "provider": "sqlite",
         "url": "sqlite://:memory:",
-        "migrations": {
-          "mode": "declarative"
-        }
+        "generateSQL": false,
+        "autoSync": false     // Disable for tests
       },
       "production": {
         "provider": "postgres",
         "url": "${DATABASE_URL}",
-        "migrations": {
-          "mode": "versioned",
-          "dir": "./migrations/postgres"
-        }
+        "generateSQL": true,  // Generate SQL for review
+        "autoSync": false     // Never auto-sync production!
       }
+    },
+    "migrations": {
+      "dir": "./migrations"
     }
   }
 }
@@ -264,82 +245,99 @@ For different databases per environment:
 
 ## Understanding Migration Storage
 
-When using versioned mode, OKRA creates a structured directory:
+OKRA tracks schema states to enable its two-phase workflow:
 
 ```
 migrations/
-├── 20240120_143022_initial/
-│   ├── migration.sql    # The SQL to run
-│   └── schema.json      # Schema snapshot at this point
-├── 20240121_091545_add_users/
-│   ├── migration.sql
-│   └── schema.json
-└── current/
-    └── schema.json      # Latest schema state
+├── snapshot/
+│   └── schema.json      # Last committed schema (for diffing)
+├── current/
+│   └── schema.json      # Current synced state (what's in DB)
+├── 20240120_143022/
+│   ├── schema.json      # Schema at time of migration
+│   └── migration.sql    # Optional: only if generateSQL is true
+└── 20240121_091545/
+    ├── schema.json
+    └── migration.sql
 ```
 
-The `schema.json` files enable accurate diffing - OKRA knows exactly what changed between versions. You only edit `models.okra.gql`; these files are generated automatically.
+**Key directories:**
+- `snapshot/`: What was last committed (used for creating migrations)
+- `current/`: What's currently synced to the database
+- Timestamped folders: Individual migrations
 
-## Migration Modes
+You only edit `models.okra.gql`; these tracking files are managed automatically.
 
-### Declarative Mode
+## The Two-Phase Workflow
 
-Like Prisma's `db push`, perfect for rapid development:
+### Phase 1: Development (db:sync)
 
-**Pros:**
-- Zero friction - just sync and go
-- No migration conflicts
-- Always matches your schema
-- Perfect for prototyping
+Rapid iteration without migrations:
 
-**Cons:**
-- No migration history
-- Can't review changes
-- Not suitable for production
-
-**Commands:**
 ```bash
-okra db:sync              # Apply schema changes
-okra db:sync --dry-run    # Preview changes
-okra db:sync --force      # Allow destructive changes
+# Auto-sync during development
+okra dev
+# [OKRA] Auto-sync enabled, watching models.okra.gql
+
+# Or manual sync
+okra db:sync
 ```
 
-### Versioned Mode
+**What happens:**
+- Direct database updates
+- No migration files
+- Updates `current/schema.json`
+- Perfect for experimenting
 
-Traditional migration files for production:
+### Phase 2: Commit (db:migrate:snapshot)
 
-**Pros:**
-- Full migration history
-- Code review friendly
-- Explicit rollback support
-- Team collaboration ready
+Create clean migrations for deployment:
 
-**Cons:**
-- More steps required
-- Potential conflicts
-- Requires management
-
-**Commands:**
 ```bash
-okra db:migrate:generate    # Generate from schema diff
-okra db:migrate:up
-okra db:migrate:down
-okra db:migrate:status
+# See what changed
+okra db:diff
+# Changes since last snapshot:
+#   + Added field 'phoneNumber' to User
+#   - Removed field 'faxNumber' from User
+
+# Create migration snapshot
+okra db:migrate:snapshot
 ```
 
-### Transitioning Modes
+**Safety check if schema not synced:**
+```
+⚠️  Schema mismatch detected!
 
-Start with declarative, move to versioned when ready:
+Your models.okra.gql has changes that haven't been synced:
+  + Added field 'email' to User
+
+What would you like to do?
+  1. Sync database first, then create snapshot (recommended)
+  2. Create snapshot anyway (untested changes)
+  3. Cancel
+
+Choice [1]: _
+```
+
+### Complete Example Flow
 
 ```bash
-# During early development
-okra db:sync  # Fast iterations
+# 1. Start developing
+okra dev
 
-# Ready for production?
-okra db:migrate:generate --initial
+# 2. Make many schema changes
+# - Add fields
+# - Rename things
+# - Delete others
+# (Database auto-syncs each time)
 
-# Creates initial migration from current database state
-# Subsequent changes: just run okra db:migrate:generate
+# 3. Ready to commit? Create snapshot
+okra db:migrate:snapshot
+# Generated migrations/20240120_143022/
+#   Net changes: +1 field, -1 field (not all the intermediate steps!)
+
+# 4. Deploy to production
+OKRA_ENV=production okra db:migrate:up
 ```
 
 ## Type Generation
@@ -423,22 +421,26 @@ okra db:migrate:create --name add_json_field
 
 ### 1. Start Simple
 
-Begin with declarative mode for new projects:
+Begin with auto-sync for new projects:
 ```json
 {
   "database": {
     "provider": "postgres",
-    "migrations": { "mode": "declarative" }
+    "migrations": { 
+      "development": {
+        "autoSync": true
+      }
+    }
   }
 }
 ```
 
 ### 2. Use Environments
 
-Different modes for different environments:
-- Local: Declarative with SQLite (fast)
-- CI: Versioned with PostgreSQL (accurate)
-- Production: Always versioned
+Different settings for different environments:
+- Local: Auto-sync enabled, SQLite for speed
+- CI: Auto-sync disabled, snapshot testing
+- Production: Auto-sync disabled, SQL files enabled
 
 ### 3. Schema Organization
 
@@ -469,19 +471,22 @@ model User {
 
 Always review migrations before applying to production:
 ```bash
-# 1. Make schema changes in models.okra.gql
+# 1. During development (auto-sync handles updates)
 model User {
-  # Add new field
-  phoneNumber: String?
+  phoneNumber: String?     # Added
+  faxNumber: String?       # Added then removed
+  mobileNumber: String?    # Added then renamed to phoneNumber
 }
 
-# 2. Generate migration from schema diff
-okra db:migrate:generate
+# 2. Create snapshot when ready
+okra db:migrate:snapshot
 
-# Output: Generated migrations/20240120_143022.sql
+# Output: Generated migrations/20240120_143022/
+#   Net change: Added phoneNumber field only
+#   (All experiments collapsed into one clean migration)
 
-# 3. Review what Atlas generated
-cat migrations/20240120_143022.sql
+# 3. If generateSQL is true, review the SQL
+cat migrations/20240120_143022/migration.sql
 # ALTER TABLE users ADD COLUMN phone_number VARCHAR(255);
 
 # 4. Test in staging first
@@ -538,19 +543,34 @@ model User {
 
 ## Troubleshooting
 
+### Understanding Snapshots
+
+The snapshot workflow prevents migration clutter:
+
+```bash
+# Without snapshots (traditional):
+migration_001_add_field.sql
+migration_002_rename_field.sql  
+migration_003_remove_old_field.sql
+migration_004_add_another_field.sql
+
+# With snapshots (OKRA):
+migration_20240120_143022.sql  # All changes in one clean migration
+```
+
 ### Schema Conflicts
 
 When working in teams:
 ```bash
-# Fetch latest changes including schema
+# Fetch latest changes
 git pull
 
-# Merge any schema conflicts in models.okra.gql
-# Then regenerate migrations
-okra db:migrate:generate
+# Merge conflicts in models.okra.gql (easy!)
+# Sync your local database
+okra db:sync
 
-# Atlas figures out the right migrations
-# based on the merged schema
+# Create new snapshot with merged changes
+okra db:migrate:snapshot
 ```
 
 The beauty: Conflicts happen in the schema file (easy to resolve), not in SQL migrations!
@@ -576,32 +596,31 @@ Error: Field 'email' marked as @unique but type is JSON
 
 ## CLI Reference
 
-### Schema Commands
+### Development Commands
 
 ```bash
-okra db:validate           # Validate schema syntax
-okra db:sync              # Sync database (declarative)
-okra db:sync --dry-run    # Preview changes
-okra db:sync --force      # Force destructive changes
+okra db:sync              # Sync database to schema (no migrations)
+okra db:sync --watch      # Watch mode for auto-sync
+okra db:diff              # Show changes since last snapshot
+okra db:reset             # Reset database to schema
+okra db:validate          # Validate schema syntax
 ```
 
 ### Migration Commands
 
 ```bash
-okra db:init              # Initialize migrations
-okra db:migrate:generate  # Diff schema vs database, generate migrations
+okra db:init              # Initialize migrations directory
+okra db:migrate:snapshot  # Create migration from changes since last snapshot
 okra db:migrate:up        # Apply migrations
 okra db:migrate:down      # Rollback migration
 okra db:migrate:status    # Show migration status
-okra db:migrate:validate  # Validate all migrations
 ```
 
-Note: `db:migrate:generate` compares your `models.okra.gql` against the current database state and generates the necessary SQL to bring the database in sync with your schema.
+Note: `db:migrate:snapshot` creates a single migration from all changes since your last snapshot. It ensures changes have been tested by checking if the schema is synced.
 
 ### Utility Commands
 
 ```bash
-okra db:reset            # Drop and recreate database
 okra db:seed             # Run seed files
 okra models:generate     # Manually generate types
 ```
@@ -610,11 +629,13 @@ okra models:generate     # Manually generate types
 
 1. **Define your schema** in `models.okra.gql`
 2. **Configure your database** in `okra.config.json`  
-3. **Start with declarative mode** (`okra db:sync`) for quick development
-4. **Switch to versioned** when ready for production:
-   - Edit `models.okra.gql`
-   - Run `okra db:migrate:generate`
-   - Review and commit generated SQL
-5. **Use the SQL Host API** to query your data
-
-For more details on querying data, see the [SQL Host API documentation](./host-apis/sql.md).
+3. **Start developing** with `okra dev` (auto-sync enabled)
+4. **Make schema changes** freely - database syncs automatically
+5. **Create snapshots** when ready to commit:
+   - Run `okra db:diff` to preview changes
+   - Run `okra db:migrate:snapshot` to create migration
+   - Commit both schema and migration files
+6. **Deploy to production**:
+   - Run `okra db:migrate:up` in production
+   - Never use auto-sync in production!
+7. **Query your data** using your preferred SQL library or query builder
