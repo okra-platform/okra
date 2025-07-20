@@ -13,6 +13,7 @@
 > - Renamed `CacheManager` to `ArtifactCacheManager` for clarity
 > - Added `AWSCredentials` struct definition
 > - Clarified JSON-only serialization for WASM boundaries
+> - Added comprehensive dependencies section with required Go libraries
 
 ## 1. Overview
 
@@ -481,7 +482,92 @@ var (
 - Service capabilities limit registry usage
 - Audit logs for all registry operations
 
-## 9. Open Questions
+## 9. Dependencies
+
+### Core Libraries
+
+#### AWS SDK v2 (for S3 Storage)
+```go
+github.com/aws/aws-sdk-go-v2/config
+github.com/aws/aws-sdk-go-v2/service/s3
+github.com/aws/aws-sdk-go-v2/feature/s3/manager
+```
+- Used for S3 storage backend implementation
+- Provides efficient streaming uploads/downloads
+- Supports IAM role authentication
+
+#### Semantic Versioning
+```go
+github.com/Masterminds/semver/v3
+```
+- Industry-standard semver parsing and constraint matching
+- Handles version sorting and comparison
+- Supports pre-release versions and metadata
+
+#### YAML Configuration
+```go
+gopkg.in/yaml.v3
+```
+- For parsing registry configuration files
+- Already used elsewhere in OKRA
+
+#### File System Operations
+```go
+github.com/spf13/afero
+```
+- Abstraction layer for file system operations
+- Enables better testing with in-memory filesystems
+- Provides atomic file operations
+
+### Existing OKRA Dependencies (to reuse)
+
+#### Logging
+```go
+log/slog // Standard library structured logging
+```
+- Already used throughout OKRA
+- Provides structured logging with levels
+
+#### Concurrency
+```go
+sync // Standard library
+golang.org/x/sync/errgroup
+```
+- For concurrent operations and synchronization
+- Error group for parallel registry operations
+
+#### Testing
+```go
+github.com/stretchr/testify
+```
+- Already used in OKRA for assertions
+- Provides require/assert patterns
+
+### Optional Libraries (for future enhancements)
+
+#### Compression
+```go
+github.com/klauspost/compress
+```
+- For artifact compression/decompression
+- Better performance than standard library
+
+#### Caching
+```go
+github.com/dgraph-io/ristretto
+```
+- High-performance cache with TTL support
+- Could replace simple map-based cache
+
+#### Checksums
+```go
+crypto/sha256 // Standard library
+encoding/hex  // Standard library
+```
+- For artifact integrity verification
+- SHA-256 checksums for all artifacts
+
+## 10. Open Questions
 
 ### Design Decisions
 1. Should we support partial package downloads?
@@ -500,7 +586,7 @@ var (
 - Advanced search capabilities
 - WebAssembly component model support
 
-## Implementation Plan
+## 11. Implementation Plan
 
 ### Phase 1: Core Registry (Week 1)
 1. Storage abstraction and implementations

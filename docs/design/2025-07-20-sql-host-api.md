@@ -194,15 +194,38 @@ func (f *sqlHostAPIFactory) Version() string {
 }
 
 func (f *sqlHostAPIFactory) Create(config hostapi.HostAPIConfig) (hostapi.HostAPI, error) {
-    // Initialize connection pool based on config
-    pool, err := newConnectionPool(config)
+    // Parse database URL to determine driver
+    dbURL, err := dburl.Parse(config.Get("databaseUrl"))
     if err != nil {
-        return nil, err
+        return nil, fmt.Errorf("invalid database URL: %w", err)
     }
+    
+    // Initialize connection pool based on driver type
+    var pool *sql.DB
+    switch dbURL.Driver {
+    case "postgres", "pgx":
+        pool, err = pgx.Open(dbURL.String())
+    case "mysql":
+        pool, err = mysql.Open(dbURL.String())
+    case "sqlite3":
+        pool, err = sqlite.Open(dbURL.String())
+    default:
+        return nil, fmt.Errorf("unsupported database driver: %s", dbURL.Driver)
+    }
+    
+    if err != nil {
+        return nil, fmt.Errorf("failed to open database: %w", err)
+    }
+    
+    // Configure pool settings
+    pool.SetMaxOpenConns(config.GetInt("maxConnections", 10))
+    pool.SetMaxIdleConns(config.GetInt("maxConnections", 10) / 2)
+    pool.SetConnMaxLifetime(5 * time.Minute)
     
     return &sqlHostAPI{
         pool:         pool,
-        queryBuilder: newQueryBuilder(),
+        driver:       dbURL.Driver,
+        queryBuilder: newQueryBuilder(dbURL.Driver),
         policyEngine: config.PolicyEngine,
         config:       config,
         logger:       config.Logger,
@@ -240,6 +263,7 @@ type sqlHostAPI struct {
     name         string
     version      string
     pool         *sql.DB
+    driver       string  // "postgres", "mysql", or "sqlite3"
     queryBuilder *queryBuilder
     policyEngine hostapi.PolicyEngine
     config       hostapi.HostAPIConfig
@@ -604,6 +628,13 @@ In `okra.json`:
 }
 ```
 
+Database URL examples:
+- PostgreSQL: `postgres://user:pass@localhost:5432/dbname?sslmode=disable`
+- MySQL: `mysql://user:pass@tcp(localhost:3306)/dbname?parseTime=true`
+- SQLite: `sqlite3://file:test.db?cache=shared&mode=rwc` or `sqlite3://:memory:`
+
+The driver is automatically selected based on the URL scheme. SQLite is recommended only for local development due to its limitations with concurrent writes.
+
 ## Security Considerations
 
 1. **Connection String Security**: Database URLs stored in secrets, never in config
@@ -659,6 +690,133 @@ For services currently using direct database access:
 3. **Adoption**: 80% of database operations use query/mutate
 4. **Developer Satisfaction**: Positive feedback on API ergonomics
 5. **Operational**: <0.01% timeout rate, comprehensive audit logs
+
+## Dependencies
+
+The SQL Host API implementation will use the following Go libraries:
+
+### Core Dependencies
+
+1. **[Squirrel](https://github.com/Masterminds/squirrel)** - SQL query builder
+   - Type-safe query construction
+   - Prevents SQL injection through parameterization
+   - Supports complex queries and subqueries
+
+2. **[sqlx](https://github.com/jmoiron/sqlx)** - Extended database/sql functionality
+   - Named query parameters
+   - Struct scanning for result sets
+   - Better connection pool management
+   - Prepared statement caching
+
+3. **Database Drivers** - Support for multiple databases
+   - **[pgx/v5](https://github.com/jackc/pgx)** - PostgreSQL driver
+     - High-performance native PostgreSQL driver
+     - Support for PostgreSQL-specific features
+     - Better connection pooling than standard lib/pq
+     - Context cancellation support
+   - **[go-sql-driver/mysql](https://github.com/go-sql-driver/mysql)** - MySQL driver
+     - Mature MySQL/MariaDB driver
+     - Support for MySQL-specific features
+     - Connection pooling and prepared statements
+   - **[mattn/go-sqlite3](https://github.com/mattn/go-sqlite3)** - SQLite driver
+     - For local development environments
+     - Zero-configuration database
+     - File-based storage
+     - CGO dependency (note for builds)
+
+### Schema & Validation
+
+4. **[go-playground/validator](https://github.com/go-playground/validator)** - Struct validation
+   - Validate query parameters before execution
+   - Custom validation rules for SQL identifiers
+   - Table/column name validation
+
+5. **[xo/dburl](https://github.com/xo/dburl)** - Database URL parsing
+   - Parse connection strings safely
+   - Support multiple database URL formats
+   - Extract connection parameters
+
+### Testing & Development
+
+6. **[DATA-DOG/go-sqlmock](https://github.com/DATA-DOG/go-sqlmock)** - SQL mocking for tests
+   - Mock database interactions in unit tests
+   - Verify generated SQL queries
+   - Test error conditions
+
+7. **[golang-migrate/migrate](https://github.com/golang-migrate/migrate)** - Database migrations
+   - Schema versioning for test databases
+   - Development environment setup
+   - Integration test fixtures
+
+### Monitoring & Performance
+
+8. **[SQLC](https://github.com/kyleconroy/sqlc)** (optional) - Compile-time SQL checking
+   - Validate SQL at build time
+   - Generate type-safe Go code from SQL
+   - Could be used for internal queries
+
+9. **Database-specific features**
+   - Squirrel supports all three target databases
+   - Database detection from connection string
+   - Dialect-specific SQL generation where needed
+
+### Observability & Metrics
+
+10. **[sqlstats](https://github.com/dlmiddlecote/sqlstats)** - SQL database metrics
+    - Export connection pool metrics
+    - Monitor query performance
+    - Integrate with OpenTelemetry
+
+11. **[ocsql](https://github.com/opencensus-integrations/ocsql)** - OpenCensus SQL driver wrapper
+    - Automatic query tracing
+    - Query latency metrics
+    - Connection pool monitoring
+
+### Security & Rate Limiting
+
+12. **[ulule/limiter](https://github.com/ulule/limiter)** - Rate limiting
+    - Per-service query rate limits
+    - Prevent resource exhaustion
+    - Memory-efficient counting
+
+13. **[securego/gosec](https://github.com/securego/gosec)** - Security linter (dev dependency)
+    - Scan for SQL injection vulnerabilities
+    - Ensure secure coding practices
+    - CI/CD integration
+
+### Example go.mod additions:
+```go
+require (
+    // Core SQL functionality
+    github.com/Masterminds/squirrel v1.5.4
+    github.com/jmoiron/sqlx v1.3.5
+    
+    // Database drivers
+    github.com/jackc/pgx/v5 v5.5.1              // PostgreSQL
+    github.com/go-sql-driver/mysql v1.7.1       // MySQL
+    github.com/mattn/go-sqlite3 v1.14.19        // SQLite (local dev)
+    
+    // Validation and parsing
+    github.com/go-playground/validator/v10 v10.16.0
+    github.com/xo/dburl v0.20.0
+    
+    // Observability
+    github.com/dlmiddlecote/sqlstats v1.0.0
+    contrib.go.opencensus.io/integrations/ocsql v0.1.7
+    
+    // Security and rate limiting
+    github.com/ulule/limiter/v3 v3.11.2
+)
+
+require (
+    // Test dependencies
+    github.com/DATA-DOG/go-sqlmock v1.5.0
+    github.com/golang-migrate/migrate/v4 v4.17.0
+    
+    // Development tools
+    github.com/securego/gosec/v2 v2.18.2
+)
+```
 
 ## Implementation Checklist
 
